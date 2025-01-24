@@ -38,6 +38,7 @@ class PlayerWeeklyTeam(Base):
 class Team(Base):
     __tablename__ = 'teams'
     team_id = Column(Integer, primary_key=True)
+    team_pfref_id = Column(String(50), nullable=False)
 
 class TeamName(Base):
     __tablename__ = 'team_names'
