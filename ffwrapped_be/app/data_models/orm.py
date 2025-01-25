@@ -40,6 +40,9 @@ class Team(Base):
     team_id = Column(Integer, primary_key=True)
     team_pfref_id = Column(String(50), nullable=False)
 
+    def __repr__(self):
+        return f"<Team(team_id={self.team_id}, team_pfref_id={self.team_pfref_id})>"
+
 class TeamName(Base):
     __tablename__ = 'team_names'
     team_name_id = Column(Integer, primary_key=True)
@@ -48,6 +51,9 @@ class TeamName(Base):
     team_name = Column(String(50), nullable=False)
 
     __table_args__ = (UniqueConstraint('season', 'tm_id'),)  
+
+    def __repr__(self):
+        return f"<TeamName(team_name_id={self.team_name_id}, season={self.season}, tm_id={self.tm_id}, team_name={self.team_name})>"
   
 class PlayerWeek(Base):
     __tablename__ = 'player_week'
