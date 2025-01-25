@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, TIMESTAMP, ForeignKey
+from sqlalchemy import Column, Integer, String, TIMESTAMP, ForeignKey, Date
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.schema import UniqueConstraint
 
@@ -51,9 +51,6 @@ class TeamName(Base):
     team_name = Column(String(50), nullable=False)
 
     __table_args__ = (UniqueConstraint('season', 'tm_id'),)  
-
-    def __repr__(self):
-        return f"<TeamName(team_name_id={self.team_name_id}, season={self.season}, tm_id={self.tm_id}, team_name={self.team_name})>"
   
 class PlayerWeek(Base):
     __tablename__ = 'player_week'
@@ -64,7 +61,6 @@ class PlayerWeek(Base):
     points = Column(Integer)
     player = relationship("Player", back_populates="weeks")
 
-
 class Game(Base):
     __tablename__ = 'games'
     game_id = Column(Integer, primary_key=True)
@@ -73,5 +69,6 @@ class Game(Base):
     tm_id = Column(Integer, ForeignKey('teams.team_id'))
     opp_id = Column(Integer, ForeignKey('teams.team_id'))
     home_away = Column(String(50))
+    game_date = Column(Date)
 
     __table_args__ = (UniqueConstraint('season', 'week', 'tm_id'),)

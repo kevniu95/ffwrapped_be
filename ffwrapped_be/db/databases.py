@@ -43,6 +43,7 @@ def bulk_insert(records: list[orm.Base],
         )
         if flush:
             db.flush()
+            # TODO: this logic lowkey makes no sense- need to fix
             return records
         db.commit()
     except:
@@ -64,6 +65,7 @@ def insert_record(record: orm.Base,
         db.add(record)
         if flush:
             db.flush()
+            # TODO: this logic lowkey makes no sense- need to fix
             return record
         db.commit()
         db.refresh(record)
@@ -74,3 +76,18 @@ def insert_record(record: orm.Base,
         if new_session:
             db.close()
     return record
+
+def get_all_records(record_type: orm.Base, db=None) -> list[orm.Base]:
+    new_session = False
+    if db is None:
+        db = SessionLocal()
+        new_session = True
+    try:
+        records = db.query(record_type).all()
+    except:
+        db.rollback()
+        raise
+    finally:
+        if new_session:
+            db.close()
+    return records
