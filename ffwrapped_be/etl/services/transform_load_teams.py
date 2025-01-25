@@ -8,35 +8,35 @@ logger = logging.getLogger(__name__)
 
 class TeamTransformLoader():
     def __init__(self):
-        self.team_extractor = TeamExtractor()
+        self.extractor = TeamExtractor()
         self.db = db.SessionLocal()
         
     def transform_load(self):
-        team_data: List[Dict] = self.team_extractor.extract()
+        team_data: List[Dict] = self.extractor.extract()
         logger.info('Extracted generic data for all active NFL teams')
         
         # Load basic team data into the database
         team_entries = []
         for row in team_data:
             team_entry = {'team_pfref_id': row['team_abbreviation']}
-            teams.append(team_entry)
-            # teams[row['team_abbreviation']] = team_row_entry
+            team_entries.append(team_entry)
         insertion_results = db.bulk_insert(team_entries, record_type = Team, flush = True, db= self.db)
         teams: List[Team] = insertion_results.all()
         logger.info(f'Successfully inserted teams in bulk!')
-            
+        
         # Load team names into the database
         for team in teams:
             logger.info(f'Extracting team detail data for team {team.team_pfref_id}')
             team_detail_extractor = TeamDetailExtractor(team.team_pfref_id)
             team_detail_data = team_detail_extractor.extract()
 
-            team_name_entries = {}
+            team_name_entries = []
             for row in team_detail_data:
-                team_name_entry = {'season': int(row['Year']), 'tm_id': team.team_id, 'team_name': row['Tm'].strip('*')}
-                team_names[row['Year']] = team_name_entry
+                team_name_entry = {'season': int(row['Year']), 
+                                   'tm_id': team.team_id, 
+                                   'team_name': row['Tm'].strip('*')}
+                team_name_entries.append(team_name_entry)
             insertion_results = db.bulk_insert(team_name_entries, record_type = TeamName, flush = True, db=self.db)
-            team_names: List[TeamName] = insertion_results.all()
             logger.info(f'Successfully inserted team names for team {team.team_pfref_id} in bulk!')
         
         db.commit(self.db)

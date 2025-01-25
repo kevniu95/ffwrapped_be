@@ -1,4 +1,5 @@
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import List, Dict
 import requests
@@ -10,8 +11,9 @@ from ffwrapped_be.etl.utils import custom_sleep_and_retry
 logger = logging.getLogger(__name__)
 
 @custom_sleep_and_retry
-@limits(calls=19, period=60)
+@limits(calls=4, period=20)
 def limited_pfref_request(url):
+    time.sleep(2)
     return requests.get(url)
 
 class Extractor():
