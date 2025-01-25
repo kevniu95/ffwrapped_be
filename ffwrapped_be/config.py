@@ -7,6 +7,10 @@ load_dotenv()
 
 class Config:
     pfref_base = os.getenv('PFREF_BASE')
+    stathead_base = os.getenv('STATHEAD_BASE')
+
+    stathead_username = os.getenv('STATHEAD_USERNAME')
+    stathead_password = os.getenv('STATHEAD_PASSWORD')  
     
     railway_db_url = os.getenv('RAILWAY_DB_URL')
     railway_db_user = os.getenv('RAILWAY_DB_USER')
