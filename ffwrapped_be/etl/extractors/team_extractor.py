@@ -16,7 +16,7 @@ def limited_pfref_request(url):
     time.sleep(2)
     return requests.get(url)
 
-class Extractor():
+class Extractor(ABC):
     @abstractmethod
     def extract(self) -> List[Dict]:
         """
