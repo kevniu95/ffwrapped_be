@@ -40,9 +40,9 @@ class GameTransformLoader():
           team_mapping[team.team_pfref_id] = team.team_id
       return team_mapping
   
-  def transform_load(self):
-      game_data: List[Dict] = self.extractor.extract()
-      logger.info('Extracted weekly game data for all active NFL teams')
+  def transform_load(self, year: int):
+      game_data: List[Dict] = self.extractor.extract(year)
+      logger.info(f'Extracted weekly game data for all active NFL teams for year {year}')
 
       team_mapping = self.get_team_mapping()
 

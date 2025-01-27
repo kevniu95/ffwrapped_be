@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 
 from ratelimit import limits
 from ffwrapped_be.config import config
-from ffwrapped_be.etl.utils import custom_sleep_and_retry
+from ffwrapped_be.etl.utils import custom_sleep_and_retry, WEEKLY_PLAYER_EXTRACTOR_HEADER_COLS
 from ffwrapped_be.etl.extractors.team_extractor import Extractor
 
 logger = logging.getLogger(__name__)
@@ -50,11 +50,10 @@ class WeeklyStatheadExtractor(Extractor):
             raise Exception("Login failed")      
     
 
-    def extract(self, year: int) -> List[Dict]:
+    def extract(self, year: int, offset = 0) -> List[Dict]:
         """
         Call extract_offset multiple times to get all the data
         """
-        offset = 0
         all_data = []
         while True:
             logger.info(f"Extracting {self.desc} for year {year} with offset {offset}")
@@ -108,7 +107,6 @@ class WeeklyGameExtractor(WeeklyStatheadExtractor):
 
     def extract_offset(self, year: int, offset: int) -> List[Dict]:
         offset_url = self.url + f'&year_min={year}' + f'&year_max={year}' + f'&offset={offset}' 
-        logger.info(f"Extracting data from {offset_url}")
         
         all_rows = self._webscrapeTableRows(offset_url)
         if not all_rows:
@@ -135,7 +133,7 @@ class WeeklyGameExtractor(WeeklyStatheadExtractor):
         return game_data
 
 
-class PlayerExtractor(WeeklyStatheadExtractor):
+class WeeklyPlayerExtractor(WeeklyStatheadExtractor):
     def __init__(self):
         super().__init__()
         weekly_player_url = "/football/player-game-finder.cgi"
@@ -152,7 +150,10 @@ class PlayerExtractor(WeeklyStatheadExtractor):
             'ccomp[5]': 'gt',
             'cstat[5]': 'fgm',
             'ccomp[6]': 'gt',
-            'cstat[6]': 'fantasy_points'
+            'cstat[6]': 'fantasy_points',
+            'ccomp[7]': 'gt',
+            'cstat[7]': 'fumbles'
+            # TODO: Add query params to restrict positions - don't need defensive players
         }
         self.url = self.stathead_base_url + weekly_player_url + '?' + '&'.join([f'{k}={v}' for k, v in query_params.items()])
         self.desc = "weekly player data"
@@ -160,15 +161,12 @@ class PlayerExtractor(WeeklyStatheadExtractor):
     
     def extract_offset(self, year: int, offset: int) -> List[Dict]:
         offset_url = self.url + f'&year_min={year}' + f'&year_max={year}' + f'&offset={offset}'
-        logger.info(f"Extracting data from {offset_url}")
         
         all_rows = self._webscrapeTableRows(offset_url)
         if not all_rows:
             return []
         
-        header_row = all_rows[1]
-        header_cols = header_row.find_all('th')
-        header_cols = [ele.text.strip() for ele in header_cols if ele.text.strip() != 'Rk']
+        header_cols = WEEKLY_PLAYER_EXTRACTOR_HEADER_COLS
         
         data_rows = all_rows[2:]
         player_data = []
@@ -179,8 +177,10 @@ class PlayerExtractor(WeeklyStatheadExtractor):
                 row_data[header] = col.text.strip()
                 # Check for 'a' tag and extract link
                 a_tag = col.find('a')
+                if a_tag and header == 'Team':
+                    row_data[f"{header}_id"] = a_tag['href'].split('/')[-2].removesuffix('.htm')
                 if a_tag and header == 'Player':
-                    row_data[f"{header}_id"] = a_tag['href'].split('/')[-1].strip('.htm')
+                    row_data[f"{header}_id"] = a_tag['href'].split('/')[-1].removesuffix('.htm')
             player_data.append(row_data)
         logger.info(f"Successfully extracted {len(player_data)} rows for offset {offset}")
         return player_data
@@ -191,6 +191,8 @@ if __name__ == '__main__':
     # [print(a) for a in game_data]
     # print(len(game_data))
 
-    player_extractor = PlayerExtractor()
-    player_data = player_extractor.extract(2024)
+    player_extractor = WeeklyPlayerExtractor()
+    # player_data = player_extractor.extract(2024)
+    player_data = player_extractor.extract_offset(2024, 0)
     [print(a) for a in player_data]
+
