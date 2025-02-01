@@ -1,6 +1,7 @@
 import logging
 import requests
 import time
+from urllib.parse import urlencode
 from typing import List, Dict, Any
 from bs4 import BeautifulSoup
 from abc import ABC, abstractmethod
@@ -65,7 +66,7 @@ class WeeklyStatheadExtractor(Extractor):
         return all_data
 
 
-    def _webscrapeTableRows(self, offset_url: str) -> List[Any]:
+    def _webscrape_table_rows(self, offset_url: str) -> List[Any]:
         page = limited_pfref_request(self.session, offset_url)
         
         if page.status_code == 200:
@@ -108,7 +109,7 @@ class WeeklyGameExtractor(WeeklyStatheadExtractor):
     def extract_offset(self, year: int, offset: int) -> List[Dict]:
         offset_url = self.url + f'&year_min={year}' + f'&year_max={year}' + f'&offset={offset}' 
         
-        all_rows = self._webscrapeTableRows(offset_url)
+        all_rows = self._webscrape_table_rows(offset_url)
         if not all_rows:
             return []
         
@@ -152,17 +153,18 @@ class WeeklyPlayerExtractor(WeeklyStatheadExtractor):
             'ccomp[6]': 'gt',
             'cstat[6]': 'fantasy_points',
             'ccomp[7]': 'gt',
-            'cstat[7]': 'fumbles'
-            # TODO: Add query params to restrict positions - don't need defensive players
+            'cstat[7]': 'fumbles',
+            'season_positions[]': ['qb', 'rb', 'wr', 'te']
         }
-        self.url = self.stathead_base_url + weekly_player_url + '?' + '&'.join([f'{k}={v}' for k, v in query_params.items()])
+        query_string = urlencode(query_params, doseq=True)
+        self.url = self.stathead_base_url + weekly_player_url + '?' + query_string
         self.desc = "weekly player data"
         
     
     def extract_offset(self, year: int, offset: int) -> List[Dict]:
         offset_url = self.url + f'&year_min={year}' + f'&year_max={year}' + f'&offset={offset}'
         
-        all_rows = self._webscrapeTableRows(offset_url)
+        all_rows = self._webscrape_table_rows(offset_url)
         if not all_rows:
             return []
         
@@ -194,5 +196,5 @@ if __name__ == '__main__':
     player_extractor = WeeklyPlayerExtractor()
     # player_data = player_extractor.extract(2024)
     player_data = player_extractor.extract_offset(2024, 0)
-    [print(a) for a in player_data]
+    # [print(a) for a in player_data]
 

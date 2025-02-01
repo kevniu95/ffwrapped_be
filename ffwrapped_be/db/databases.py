@@ -1,5 +1,5 @@
 from typing import List
-from sqlalchemy import create_engine, insert
+from sqlalchemy import create_engine, insert, text
 from sqlalchemy.orm import sessionmaker
 import logging
 
@@ -146,3 +146,10 @@ def delete_all_rows(table: orm.Base, db=None):
     finally:
         if new_session:
             db.close()
+
+def execute_text_command(txt: str, db) -> None:
+    try:
+        db.execute(text(txt))
+    except:
+        db.rollback()
+        raise

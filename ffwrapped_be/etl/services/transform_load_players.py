@@ -15,11 +15,17 @@ class PlayerWeekTransformLoader():
         self.stathead_obs_per_page = 200
 
     def _clear_data(self):
+        logger.info("Clearing all existing player data")
         db.delete_all_rows(PlayerWeek, self.db)
+        db.execute_text_command("ALTER SEQUENCE player_week_player_week_id_seq RESTART WITH 1", self.db)
         logger.info('Deleted all existing player weekly data')
+        
         db.delete_all_rows(Player, self.db)
+        db.execute_text_command("ALTER SEQUENCE players_player_id_seq RESTART WITH 1", self.db)
         logger.info('Deleted all existing player data')
+        
         db.delete_all_rows(PlayerWeekMetadata, self.db)
+        db.execute_text_command("ALTER SEQUENCE player_week_metadata_player_week_metadata_id_seq RESTART WITH 1", self.db)
         logger.info('Deleted all existing player weekly metadata')
     
     def get_existing_player_ids(self, pfref_ids: List[str]) -> Dict[str, int]:
@@ -43,6 +49,7 @@ class PlayerWeekTransformLoader():
         while True:
             logger.info(f'Extracting weekly player data for the year {year} at offset {offset}')
             if not self.etl_chunk(year, offset):
+                logger.info(f"Didn't find any more data to extract at offset {offset}, so stopping...")
                 break
             offset += self.stathead_obs_per_page
     
@@ -53,24 +60,25 @@ class PlayerWeekTransformLoader():
             logger.info(f'Chunk at offset {offset} for year {year} already processed, skipping')
             return True
         
-        player_data: List[Dict] = self.extractor.extract_offset(year, offset)
-        if not player_data:
+        weekly_player_data: List[Dict] = self.extractor.extract_offset(year, offset)
+        if not weekly_player_data:
             logger.info(f'No data found for year {year} at offset {offset}')
             return False
         logger.info(f'Extracted weekly player data for the year {year} at offset {offset}')
 
-        pfref_ids = [row['Player_id'] for row in player_data]
+        pfref_ids = [row['Player_id'] for row in weekly_player_data]
         existing_player_ids : Dict[str, int] = self.get_existing_player_ids(pfref_ids)
         logger.info(f'Found {len(existing_player_ids)} existing players from this set of weekly data')
 
         new_players: List[Dict[str, str]] = []
-        for row in player_data:
+        for row in weekly_player_data:
             if row['Player_id'] not in existing_player_ids:
                 new_players.append({
                     "pfref_id": row["Player_id"],
                     "first_name": row["Player"].split()[0],
                     "last_name": row["Player"].split()[-1]
                 })
+                # Add new players here, but set their ID to -1 for now
                 existing_player_ids[row['Player_id']] = -1
 
         if new_players:
@@ -83,9 +91,7 @@ class PlayerWeekTransformLoader():
 
         team_mapping = self.get_team_mapping()
         player_week_entries = []
-        for row in player_data:
-            if row['Team_id'] == 'de':
-                print(row)
+        for row in weekly_player_data:
             player_week_entry = {
                 'player_id': existing_player_ids[row['Player_id']],
                 'season': year,
