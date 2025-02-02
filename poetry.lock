@@ -157,6 +157,21 @@ files = [
 ]
 
 [[package]]
+name = "espn-api"
+version = "0.44.1"
+description = "ESPN API"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "espn_api-0.44.1-py3-none-any.whl", hash = "sha256:155ac70f4a920c86dde962326894fe38bba8612053b879dd5fe7082cb57ec25c"},
+]
+
+[package.dependencies]
+requests = ">=2.0.0,<3.0.0"
+urllib3 = "<=2.2.3"
+
+[[package]]
 name = "greenlet"
 version = "3.1.1"
 description = "Lightweight in-process concurrent programming"
@@ -594,14 +609,14 @@ files = [
 
 [[package]]
 name = "urllib3"
-version = "2.3.0"
+version = "2.2.3"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
 optional = false
-python-versions = ">=3.9"
+python-versions = ">=3.8"
 groups = ["main"]
 files = [
-    {file = "urllib3-2.3.0-py3-none-any.whl", hash = "sha256:1cee9ad369867bfdbbb48b7dd50374c0967a0bb7710050facf0dd6911440e3df"},
-    {file = "urllib3-2.3.0.tar.gz", hash = "sha256:f8c5449b3cf0861679ce7e0503c7b44b5ec981bec0d1d3795a07f1ba96f0204d"},
+    {file = "urllib3-2.2.3-py3-none-any.whl", hash = "sha256:ca899ca043dcb1bafa3e262d73aa25c465bfb49e0bd9dd5d59f1d0acba2f8fac"},
+    {file = "urllib3-2.2.3.tar.gz", hash = "sha256:e7d814a81dad81e6caf2ec9fdedb284ecc9c73076b62654547cc64ccdcae26e9"},
 ]
 
 [package.extras]
@@ -625,4 +640,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "4b7653946106cbcc1c32119c1383760b41df6e60057e66ecf5b7d91138682862"
+content-hash = "02e56a4af5a8494b406725a065b51054344356f62c60243bd84832d9fb33318d"
