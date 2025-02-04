@@ -18,7 +18,7 @@ class ESPNExtractor:
             swid=config.espn_swid,
         )
 
-    def extract_league(self) -> Dict:
+    def extract_league(self) -> League:
         return self.league
 
     def extract_teams(self) -> List[Dict]:

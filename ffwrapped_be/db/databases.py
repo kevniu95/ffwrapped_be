@@ -1,6 +1,6 @@
 from typing import List
 from sqlalchemy import create_engine, insert, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 import logging
 
 from ffwrapped_be.config import config
@@ -154,6 +154,27 @@ def get_players_by_id(pfref_ids: List[int], db=None) -> List[orm.Player]:
         if new_session:
             db.close()
     return players
+
+
+def get_league_season_by_platform_league_id(
+    league_id: str | int, db: Session = None
+) -> orm.LeagueSeason:
+    if db is None:
+        logger.error(
+            "No valid db was surprised to method to get league id from league platform id!"
+        )
+        return None
+    try:
+        league = (
+            db.query(orm.LeagueSeason)
+            .filter(orm.LeagueSeason.platform_league_id.in_([str(league_id)]))
+            .one_or_none()
+        )
+    except:
+        logger.error("Error in getting league by platform league id")
+        db.roll_back()
+        raise
+    return league
 
 
 def delete_all_rows(table: orm.Base, db=None):
