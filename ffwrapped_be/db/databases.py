@@ -1,5 +1,6 @@
-from typing import List
+from typing import List, Dict
 from sqlalchemy import create_engine, insert, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import sessionmaker, Session
 import logging
 
@@ -30,6 +31,33 @@ def commit(db):
     except:
         db.rollback()
         raise
+
+
+def bulk_upsert_players_with_ids(
+    records: List[Dict], db: Session = None
+) -> List[orm.Player]:
+    if db is None:
+        logger.error(
+            "No valid db was supplied to method to bulk upsert players with ids!"
+        )
+        return None
+    try:
+        stmt = pg_insert(orm.Player).values(records)
+        update_dict = {
+            c.name: c
+            for c in stmt.excluded
+            if c.name not in ["player_id", "pfref_id", "first_name", "last_name"]
+        }
+        logger.info(f"Update the columns: {update_dict}")
+        stmt = stmt.on_conflict_do_update(index_elements=["pfref_id"], set_=update_dict)
+        db.execute(stmt)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Error in bulk upserting players with ids: {e}")
+        db.rollback()
+        raise
+    logger.info("Successfully bulk upserted players with ids")
+    return records
 
 
 def bulk_insert(

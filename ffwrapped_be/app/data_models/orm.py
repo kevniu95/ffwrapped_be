@@ -22,8 +22,13 @@ class Player(Base):
     first_name = Column(String(50))
     last_name = Column(String(50))
     pfref_id = Column(String(50), nullable=False)
+    espn_id = Column(String(50))
+    sleeper_bot_id = Column(String(50))
+    fantasy_pros_id = Column(String(50))
+    yahoo_id = Column(String(50))
+    cbs_player_id = Column(String(50))
 
-    __table__args = UniqueConstraint("pfref_id")
+    __table_args__ = (UniqueConstraint("pfref_id"),)
     seasons = relationship("PlayerSeason", back_populates="player")
     weeks = relationship("PlayerWeek", back_populates="player")
 

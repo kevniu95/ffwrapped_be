@@ -21,5 +21,9 @@ class Config:
     railway_db_user = os.getenv("RAILWAY_DB_USER")
     railway_db_password = os.getenv("RAILWAY_DB_PASSWORD")
 
+    rapid_api_tank_url = os.getenv("RAPID_API_TANK_URL")
+    rapid_api_host = os.getenv("RAPID_API_HOST")
+    rapid_api_key = os.getenv("RAPID_API_KEY")
+
 
 config = Config()
