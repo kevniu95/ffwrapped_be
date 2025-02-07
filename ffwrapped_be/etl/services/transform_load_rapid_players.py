@@ -15,7 +15,7 @@ class RapidPlayerTransformLoader:
 
     def load_players(self) -> List[Dict]:
         players_json = self.extractor.get_players()
-        existing_players = db.get_players_by_id(
+        existing_players = db.get_players_by_pfref_id(
             [player.get("fRefID", None) for player in players_json], self.db
         )
         existing_players_set = set([player.pfref_id for player in existing_players])

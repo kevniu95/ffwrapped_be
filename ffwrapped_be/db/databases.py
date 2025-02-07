@@ -167,7 +167,7 @@ def get_player_metadata_by_season_chunk(
     return metadata
 
 
-def get_players_by_id(pfref_ids: List[int], db=None) -> List[orm.Player]:
+def get_players_by_pfref_id(pfref_ids: List[int], db=None) -> List[orm.Player]:
     new_session = False
     if db is None:
         db = SessionLocal()
@@ -175,7 +175,7 @@ def get_players_by_id(pfref_ids: List[int], db=None) -> List[orm.Player]:
     try:
         players = db.query(orm.Player).filter(orm.Player.pfref_id.in_(pfref_ids)).all()
     except:
-        logger.error("Error in getting players by ID")
+        logger.error("Error in getting players by pfref id")
         db.rollback()
         raise
     finally:

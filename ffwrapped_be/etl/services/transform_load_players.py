@@ -42,7 +42,7 @@ class PlayerWeekTransformLoader:
         logger.info("Deleted all existing player weekly metadata")
 
     def get_existing_player_ids(self, pfref_ids: List[str]) -> Dict[str, int]:
-        existing_players = db.get_players_by_id(pfref_ids, db=self.db)
+        existing_players = db.get_players_by_pfref_id(pfref_ids, db=self.db)
         return {player.pfref_id: player.player_id for player in existing_players}
 
     def insert_new_player_ids(self, new_players: List[Dict]) -> Dict[str, int]:
