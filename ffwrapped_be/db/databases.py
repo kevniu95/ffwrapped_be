@@ -184,6 +184,21 @@ def get_players_by_pfref_id(pfref_ids: List[int], db=None) -> List[orm.Player]:
     return players
 
 
+def get_players_by_espn_id(espn_ids: List[int], db: Session = None) -> List[orm.Player]:
+    if db is None:
+        logger.error(
+            "No valid db was supplied to method to bulk upsert players with ids!"
+        )
+        return None
+    try:
+        players = db.query(orm.Player).filter(orm.Player.espn_id.in_(espn_ids)).all()
+    except:
+        logger.error("Error in gett players by ESPN id")
+        db.rollback()
+        raise
+    return players
+
+
 def get_league_season_by_platform_league_id(
     league_id: str | int, db: Session = None
 ) -> orm.LeagueSeason:

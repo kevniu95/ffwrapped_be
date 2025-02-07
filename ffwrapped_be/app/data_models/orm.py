@@ -139,6 +139,7 @@ class LeagueSeason(Base):
     platform_league_id = Column(String(50), nullable=False)
     season = Column(Integer, nullable=False)
     scoring_config = Column(JSONB)
+    league_teams = relationship("LeagueTeam", backref="season")
 
     __table_args__ = (UniqueConstraint("platform_id", "platform_league_id", "season"),)
 

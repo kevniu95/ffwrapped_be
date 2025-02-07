@@ -2,16 +2,19 @@ import logging
 from typing import List, Dict
 from datetime import datetime
 
+from espn_api.base_pick import BasePick
 from espn_api.football import League, Team
 from ffwrapped_be.etl.extractors.espn_extractor import ESPNExtractor
 from ffwrapped_be.db import databases as db
 from ffwrapped_be.config import config
-from ffwrapped_be.app.data_models.orm import LeagueSeason, LeagueTeam
+from ffwrapped_be.app.data_models.orm import LeagueSeason, LeagueTeam, DraftTeam
 from ffwrapped_be.etl import utils
 
 logger = logging.getLogger(__name__)
 
 
+# TODO: Update relationships between tables for simplified queries
+# like the one you have in load_draft_teams
 class ESPNTransformLoader:
     def __init__(self, league_id: int, season: int, espn_s2: str, swid: str):
         self.extractor = ESPNExtractor(league_id, season, espn_s2, swid)
@@ -120,11 +123,60 @@ class ESPNTransformLoader:
             f"Successfully inserted league teams into db for league {self.espn_league.league_id}"
         )
 
+    def transform_load_draft_teams(self) -> None:
+        league = self.espn_league
+        league_teams: List[LeagueTeam] = self._get_existing_db_league(
+            league
+        ).league_teams
+        league_to_platform_id_mapping = {
+            team.league_team_id: team.platform_team_id for team in league_teams
+        }
+        logger.info(
+            f"Successfully extracted league teams for espn league {self.espn_league.league_id}"
+        )
+
+        pick_dict = {}
+        draft: List[BasePick] = league.draft
+        for pick in draft:
+            league_team_id = league_to_platform_id_mapping[pick.team.team_id]
+            draft_pick_number = pick.round_num * len(league_teams) + pick.round_pick
+            pick_dict[pick.playerId] = {
+                "league_team_id": league_team_id,
+                "draft_pick_number": draft_pick_number,
+            }
+        logger.info("Extracted pick and league team id info from draft picks")
+
+        player_espn_ids = [str(i) for i in list(pick_dict.keys())]
+        db_players = db.get_players_by_espn_id(player_espn_ids, self.db)
+        espn_to_db_map = {
+            int(db_player.espn_id): {"player_id": db_player.player_id}
+            for db_player in db_players
+        }
+        # TODO: Not all espn_player_ids have an entry in players table (defense, kickers)- fix this?
+        logger.info(
+            f"Extracted {len(espn_to_db_map)} player ids from db based on espn_ids"
+        )
+
+        draft_pick_entries = {
+            k: pick_dict.get(k, {}) | espn_to_db_map.get(k, {})
+            for k in espn_to_db_map.keys()
+        }
+        db.bulk_insert(draft_pick_entries.values(), DraftTeam, db=self.db)
+        logger.info(
+            f"Successfully inserted draft picks for league {self.espn_league.league_id}"
+        )
+
 
 if __name__ == "__main__":
     espnTransformLoader = ESPNTransformLoader(
         config.espn_league_id, 2024, config.espn_s2, config.espn_swid
     )
 
-    espnTransformLoader.transform_load_league()
-    espnTransformLoader.transform_load_teams()
+    # espnTransformLoader.transform_load_league()
+    # espnTransformLoader.transform_load_teams()
+    draft = espnTransformLoader.transform_load_draft_teams()
+    # for i in draft:
+    #     print(i.team)
+    #     print(i.playerId)
+    #     print(i.playerName)
+    #     print()
