@@ -171,7 +171,8 @@ class WeeklyStarter(Base):
     )
     week = Column(Integer, primary_key=True)
     player_id = Column(Integer, ForeignKey("player.player_id"), primary_key=True)
-    start = Column(Boolean, nullable=False)
+    lineup_position = Column(String(50), nullable=False)
+    # start = Column(Boolean, nullable=False)
 
 
 # Transactions

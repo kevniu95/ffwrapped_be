@@ -66,6 +66,9 @@ def bulk_insert(
     """
     Returns returning orm
     """
+    if not records:
+        logger.info("No records to insert for bulk insert function")
+        return []
     # TODO: default to fastapi_sqlalchemy db later on
     # Then remove the db=None parameter
     new_session = False
@@ -73,7 +76,7 @@ def bulk_insert(
         db = SessionLocal()
         new_session = True
     try:
-        records = db.scalars(insert(record_type).returning(record_type), records)
+        records = db.scalars(insert(record_type).returning(record_type), records).all()
         if flush:
             db.flush()
             # TODO: this logic lowkey makes no sense- need to fix
@@ -85,11 +88,11 @@ def bulk_insert(
     finally:
         if new_session:
             db.close()
+    logger.info(f"Successfully bulk inserted {len(records)} records")
     return records
 
 
 def insert_record(record: orm.Base, flush: bool = False, db=None) -> orm.Base:
-
     new_session = False
     if db is None:
         db = SessionLocal()

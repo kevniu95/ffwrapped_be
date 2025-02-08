@@ -3,11 +3,17 @@ from typing import List, Dict
 from datetime import datetime
 
 from espn_api.base_pick import BasePick
+from espn_api.football.box_score import BoxScore
 from espn_api.football import League, Team
 from ffwrapped_be.etl.extractors.espn_extractor import ESPNExtractor
 from ffwrapped_be.db import databases as db
 from ffwrapped_be.config import config
-from ffwrapped_be.app.data_models.orm import LeagueSeason, LeagueTeam, DraftTeam
+from ffwrapped_be.app.data_models.orm import (
+    LeagueSeason,
+    LeagueTeam,
+    DraftTeam,
+    WeeklyStarter,
+)
 from ffwrapped_be.etl import utils
 
 logger = logging.getLogger(__name__)
@@ -20,6 +26,8 @@ class ESPNTransformLoader:
         self.extractor = ESPNExtractor(league_id, season, espn_s2, swid)
         self.db = db.SessionLocal()
         self.espn_league: League = self.extractor.extract_league()
+        self.espn_to_db_map = {}
+        self._league_to_platform_id_mapping = None
 
     def _get_existing_db_league(self, espn_league: League) -> LeagueSeason:
         try:
@@ -124,7 +132,9 @@ class ESPNTransformLoader:
         )
 
     def transform_load_draft_teams(self) -> None:
+        # TODO: refactor to use methods and properties defined
         league = self.espn_league
+        league_to_platform_id_mapping = self.league_to_platform_id_mapping
         league_teams: List[LeagueTeam] = self._get_existing_db_league(
             league
         ).league_teams
@@ -166,15 +176,97 @@ class ESPNTransformLoader:
             f"Successfully inserted draft picks for league {self.espn_league.league_id}"
         )
 
+    def __update_espn_to_db_map(self, player_espn_ids: List[str]) -> None:
+        requested_players = [
+            espn_id
+            for espn_id in player_espn_ids
+            if espn_id not in self.espn_to_db_map.keys()
+        ]
+        if requested_players:
+            db_players = db.get_players_by_espn_id(requested_players, self.db)
+            espn_to_db_map = {
+                int(db_player.espn_id): {"db_player_id": db_player.player_id}
+                for db_player in db_players
+            }
+            self.espn_to_db_map.update(espn_to_db_map)
+        else:
+            logger.info("All requested players already in espn_to_db_map")
+        return
+
+    @property
+    def league_to_platform_id_mapping(self) -> Dict[int, int]:
+        if not self._league_to_platform_id_mapping:
+            league_teams: List[LeagueTeam] = self._get_existing_db_league(
+                self.espn_league
+            ).league_teams
+            league_to_platform_id_mapping = {
+                team.league_team_id: team.platform_team_id for team in league_teams
+            }
+            logger.info("Successfully extracted league teams for espn league")
+            self._league_to_platform_id_mapping = league_to_platform_id_mapping
+        return self._league_to_platform_id_mapping
+
+    def __transform_load_box_score_team(
+        self, box_score: BoxScore, week: int, home_team: bool
+    ):
+        team = box_score.home_team if home_team else box_score.away_team
+        lineup = box_score.home_lineup if home_team else box_score.away_lineup
+        box_team_desc = "home" if home_team else "away"
+        if not lineup:
+            logger.info(
+                f"No lineup info found for {box_team_desc} team in box score for week {week}"
+            )
+            return
+
+        player_espn_ids = [str(player.playerId) for player in lineup]
+        self.__update_espn_to_db_map(player_espn_ids)
+        weekly_starter_entries = []
+        for player in lineup:
+            if player.lineupSlot not in ["K", "D/ST"]:
+                player_id = self.espn_to_db_map.get(player.playerId, {}).get(
+                    "db_player_id", None
+                )
+                if player_id is not None:
+                    position = (
+                        player.lineupSlot if player.lineupSlot != "RB/WR/TE" else "FLEX"
+                    )
+                    weekly_starter = {
+                        "league_team_id": self.league_to_platform_id_mapping[
+                            team.team_id
+                        ],
+                        "week": week,
+                        "player_id": player_id,
+                        "lineup_position": position,
+                    }
+                    weekly_starter_entries.append(weekly_starter)
+        logger.debug(
+            "About to insert %s weekly starters for week %s", box_team_desc, week
+        )
+        db.bulk_insert(weekly_starter_entries, record_type=WeeklyStarter, db=self.db)
+
+    def transform_load_weekly_starters(self):
+        league = self.espn_league
+        for week in range(1, 18):
+            logger.info("Extracting box scores for week %s", week)
+            box_scores = league.box_scores(week)
+            for box_score in box_scores:
+                self.__transform_load_box_score_team(
+                    box_score, week=week, home_team=True
+                )
+                self.__transform_load_box_score_team(
+                    box_score, week=week, home_team=False
+                )
+
 
 if __name__ == "__main__":
     espnTransformLoader = ESPNTransformLoader(
         config.espn_league_id, 2024, config.espn_s2, config.espn_swid
     )
+    starters = espnTransformLoader.transform_load_weekly_starters()
 
     # espnTransformLoader.transform_load_league()
     # espnTransformLoader.transform_load_teams()
-    draft = espnTransformLoader.transform_load_draft_teams()
+    # draft = espnTransformLoader.transform_load_draft_teams()
     # for i in draft:
     #     print(i.team)
     #     print(i.playerId)
