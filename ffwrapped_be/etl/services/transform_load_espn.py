@@ -27,7 +27,7 @@ class ESPNTransformLoader:
         self.db = db.SessionLocal()
         self.espn_league: League = self.extractor.extract_league()
         self.espn_to_db_map = {}
-        self._league_to_platform_id_mapping = None
+        self._platform_to_league_id_mapping = None
 
     def _get_existing_db_league(self, espn_league: League) -> LeagueSeason:
         try:
@@ -80,12 +80,14 @@ class ESPNTransformLoader:
         standardized_scoring_rules = self._process_league_scoring_format(
             league.settings.scoring_format
         )
+
         logger.info("Successfully standardized scoring rules for league")
 
         league_object = LeagueSeason(
             platform_id=platform.platform_id,
             platform_league_id=league.league_id,
             season=league.year,
+            lineup_config=league.settings.position_slot_counts,
             scoring_config=standardized_scoring_rules,
         )
 
@@ -134,13 +136,9 @@ class ESPNTransformLoader:
     def transform_load_draft_teams(self) -> None:
         # TODO: refactor to use methods and properties defined
         league = self.espn_league
-        league_to_platform_id_mapping = self.league_to_platform_id_mapping
         league_teams: List[LeagueTeam] = self._get_existing_db_league(
             league
         ).league_teams
-        league_to_platform_id_mapping = {
-            team.league_team_id: team.platform_team_id for team in league_teams
-        }
         logger.info(
             f"Successfully extracted league teams for espn league {self.espn_league.league_id}"
         )
@@ -148,7 +146,7 @@ class ESPNTransformLoader:
         pick_dict = {}
         draft: List[BasePick] = league.draft
         for pick in draft:
-            league_team_id = league_to_platform_id_mapping[pick.team.team_id]
+            league_team_id = self.platform_to_league_id_mapping[pick.team.team_id]
             draft_pick_number = pick.round_num * len(league_teams) + pick.round_pick
             pick_dict[pick.playerId] = {
                 "league_team_id": league_team_id,
@@ -194,17 +192,18 @@ class ESPNTransformLoader:
         return
 
     @property
-    def league_to_platform_id_mapping(self) -> Dict[int, int]:
-        if not self._league_to_platform_id_mapping:
+    def platform_to_league_id_mapping(self) -> Dict[int, int]:
+        if not self._platform_to_league_id_mapping:
             league_teams: List[LeagueTeam] = self._get_existing_db_league(
                 self.espn_league
             ).league_teams
-            league_to_platform_id_mapping = {
-                team.league_team_id: team.platform_team_id for team in league_teams
+            platform_to_league_id_mapping = {
+                int(team.platform_team_id): int(team.league_team_id)
+                for team in league_teams
             }
             logger.info("Successfully extracted league teams for espn league")
-            self._league_to_platform_id_mapping = league_to_platform_id_mapping
-        return self._league_to_platform_id_mapping
+            self._platform_to_league_id_mapping = platform_to_league_id_mapping
+        return self._platform_to_league_id_mapping
 
     def __transform_load_box_score_team(
         self, box_score: BoxScore, week: int, home_team: bool
@@ -231,7 +230,7 @@ class ESPNTransformLoader:
                         player.lineupSlot if player.lineupSlot != "RB/WR/TE" else "FLEX"
                     )
                     weekly_starter = {
-                        "league_team_id": self.league_to_platform_id_mapping[
+                        "league_team_id": self.platform_to_league_id_mapping[
                             team.team_id
                         ],
                         "week": week,
@@ -262,7 +261,14 @@ if __name__ == "__main__":
     espnTransformLoader = ESPNTransformLoader(
         config.espn_league_id, 2024, config.espn_s2, config.espn_swid
     )
-    starters = espnTransformLoader.transform_load_weekly_starters()
+    # espnTransformLoader.transform_load_league()
+    # espnTransformLoader.transform_load_teams()
+    espnTransformLoader.transform_load_draft_teams()
+    espnTransformLoader.transform_load_weekly_starters()
+    # starters = espnTransformLoader.transform_load_weekly_starters()
+    league = espnTransformLoader.espn_league
+    # print(league.settings.lineup_slot_counts)
+    print(league.settings.position_slot_counts)
 
     # espnTransformLoader.transform_load_league()
     # espnTransformLoader.transform_load_teams()

@@ -138,6 +138,7 @@ class LeagueSeason(Base):
     platform_id = Column(Integer, ForeignKey("platform.platform_id"))
     platform_league_id = Column(String(50), nullable=False)
     season = Column(Integer, nullable=False)
+    lineup_config = Column(JSONB)
     scoring_config = Column(JSONB)
     league_teams = relationship("LeagueTeam", backref="season")
 
