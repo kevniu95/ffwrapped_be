@@ -1,10 +1,10 @@
 import logging
+from enum import Enum
 from typing import List, Dict
-from datetime import datetime
 
 from espn_api.base_pick import BasePick
 from espn_api.football.box_score import BoxScore
-from espn_api.football import League, Team
+from espn_api.football import League,
 from ffwrapped_be.etl.extractors.espn_extractor import ESPNExtractor
 from ffwrapped_be.db import databases as db
 from ffwrapped_be.config import config
@@ -13,10 +13,21 @@ from ffwrapped_be.app.data_models.orm import (
     LeagueTeam,
     DraftTeam,
     WeeklyStarter,
+    PlayerSeason,
 )
 from ffwrapped_be.etl import utils
 
 logger = logging.getLogger(__name__)
+
+
+class FantasyPosition(Enum):
+    QB = "QB"
+    RB = "RB"
+    WR = "WR"
+    TE = "TE"
+    FLEX = "FLEX"
+    K = "K"
+    DST = "DST"
 
 
 # TODO: Update relationships between tables for simplified queries
@@ -256,19 +267,59 @@ class ESPNTransformLoader:
                     box_score, week=week, home_team=False
                 )
 
+    def transform_load_player_season(self):
+        """
+        - Picks players off `players` table and uses ESPN API to determine position
+        - Then populates `player_season` table with player positions
+        """
+        BATCH_SIZE = 100
+        league = self.espn_league
+        players = db.get_players_with_espn_id(self.db)
+        players = [player for player in players if len(player.seasons) == 0]
+        logger.info(f"Successfully {len(players)} retrieved players from db")
+
+        player_season_entries = []
+        for index, player in enumerate(players, 1):
+            espn_id = int(player.espn_id)
+            player_info = league.player_info(playerId=espn_id)
+            if (
+                player_info.position
+                and player_info.position in FantasyPosition.__members__
+            ):
+                player_season_entries.append(
+                    {
+                        "player_id": player.player_id,
+                        "season": league.year,
+                        "position": player_info.position,
+                    }
+                )
+            if index % BATCH_SIZE == 0:
+                logger.info(
+                    f"Inserting {BATCH_SIZE} player season entries (processed {index} of {len(players)} total)"
+                )
+                db.bulk_insert(player_season_entries, PlayerSeason, db=self.db)
+                player_season_entries = []
+
+        if player_season_entries:
+            remaining_count = len(player_season_entries)
+            logger.info(f"Processing final batch of {remaining_count} players")
+            db.bulk_insert(player_season_entries, PlayerSeason, db=self.db)
+
 
 if __name__ == "__main__":
     espnTransformLoader = ESPNTransformLoader(
         config.espn_league_id, 2024, config.espn_s2, config.espn_swid
     )
+    espnTransformLoader.transform_load_player_season()
+
     # espnTransformLoader.transform_load_league()
     # espnTransformLoader.transform_load_teams()
-    espnTransformLoader.transform_load_draft_teams()
-    espnTransformLoader.transform_load_weekly_starters()
+    # espnTransformLoader.transform_load_draft_teams()
+    # espnTransformLoader.transform_load_weekly_starters()
     # starters = espnTransformLoader.transform_load_weekly_starters()
-    league = espnTransformLoader.espn_league
+    # league = espnTransformLoader.espn_league
     # print(league.settings.lineup_slot_counts)
-    print(league.settings.position_slot_counts)
+    # print(league.settings.position_slot_counts)
 
     # espnTransformLoader.transform_load_league()
     # espnTransformLoader.transform_load_teams()

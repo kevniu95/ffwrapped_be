@@ -170,6 +170,24 @@ def get_player_metadata_by_season_chunk(
     return metadata
 
 
+def get_players_with_espn_id(db=None) -> List[orm.Player]:
+    if not db:
+        logger.error("No valid db was supplied to method to get players with ESPN id!")
+        return None
+    try:
+        players = (
+            db.query(orm.Player)
+            .filter(orm.Player.espn_id.isnot(None))
+            .order_by(orm.Player.player_id)
+            .all()
+        )
+    except:
+        logger.error("Error in getting players with ESPN id")
+        db.rollback()
+        raise
+    return players
+
+
 def get_players_by_pfref_id(pfref_ids: List[int], db=None) -> List[orm.Player]:
     new_session = False
     if db is None:

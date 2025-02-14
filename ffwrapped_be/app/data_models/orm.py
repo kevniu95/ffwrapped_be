@@ -29,13 +29,11 @@ class Player(Base):
     cbs_player_id = Column(String(50))
 
     __table_args__ = (UniqueConstraint("pfref_id"),)
-    seasons = relationship("PlayerSeason", back_populates="player")
+    seasons = relationship("PlayerSeason", back_populates="player", lazy="joined")
     weeks = relationship("PlayerWeek", back_populates="player")
 
 
 class PlayerSeason(Base):
-    # TODO: Ignore for now
-    # Will fill this when doing later analysis (i.e., projections)
     __tablename__ = "player_season"
     player_season_id = Column(Integer, primary_key=True)
     player_id = Column(Integer, ForeignKey("player.player_id"))
