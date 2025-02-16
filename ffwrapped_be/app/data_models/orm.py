@@ -9,7 +9,7 @@ from sqlalchemy import (
     Boolean,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base, relationship, foreign, remote
 from sqlalchemy.sql import func
 from sqlalchemy.schema import UniqueConstraint
 

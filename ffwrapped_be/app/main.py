@@ -1,15 +1,22 @@
 import logging
 import time
+import re
 import cachetools
 from typing import Dict, List
 from fastapi import FastAPI, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from ffwrapped_be.db import databases as db
 from ffwrapped_be.db.databases import get_db
-from ffwrapped_be.app.data_models.orm import LeagueSeason, LeagueTeam, DraftTeam, Player
+from ffwrapped_be.app.data_models.orm import LeagueSeason, LeagueTeam, DraftTeam
 from ffwrapped_be.etl.extractors.espn_extractor import ESPNExtractor
 from ffwrapped_be.config import config
+from ffwrapped_be.app.service.best_lineup import (
+    LeagueLineupSettings,
+    Player,
+    get_best_weekly_lineup,
+)
 from fastapi.exceptions import HTTPException
+
 
 from espn_api.football import League, BoxPlayer
 
@@ -24,9 +31,6 @@ logger = logging.getLogger(__name__)
 
 cache = cachetools.LRUCache(maxsize=128)
 
-# Overall TODO:
-# 1. Make configurable with different league scoring settings
-
 
 @app.get("/")
 def read_root():
@@ -39,87 +43,6 @@ def update_weekly_stat_names():
         print(key, value)
 
 
-def convert_player(player: BoxPlayer, week: int):
-    return {
-        "name": player.name,
-        "id": player.playerId,
-        "position": player.position,
-        "points": player.stats[week].get("points", 0),
-    }
-
-
-def _get_best_possible_lineup(team_config: Dict, players: List[BoxPlayer], week: int):
-    starters = [player for player in players if player.position != "BE"]
-
-    # Group players by position
-    position_groups = {}
-    for player in starters:
-        if player.position not in position_groups:
-            position_groups[player.position] = []
-        position_groups[player.position].append(player)
-
-    # Sort players within each position group by points scored
-    for position in position_groups:
-        position_groups[position].sort(
-            key=lambda x: x.stats[week].get("points", 0), reverse=True
-        )
-
-    # Select the best players for each position based on the team configuration
-    best_lineup = {}
-    used_players = set()
-
-    for position, count in team_config.items():
-        if position in position_groups and position not in [
-            "RB/WR",
-            "WR/TE",
-            "RB/WR/TE",
-        ]:
-            for i in range(count):
-                if i < len(position_groups[position]):
-                    player = position_groups[position].pop(0)
-                    if position not in best_lineup:
-                        best_lineup[position] = []
-                    best_lineup[position].append(convert_player(player, week))
-                    used_players.add(player)
-
-    flex_positions = ["RB/WR/TE"]
-    for flex_position in flex_positions:
-        if flex_position in team_config:
-            flex_count = team_config[flex_position]
-            logger.info("Flex count: %s", flex_count)
-            if flex_count == 0:
-                continue
-            eligible_players = []
-            if flex_position == "RB/WR/TE":
-                eligible_players = (
-                    position_groups.get("RB", [])
-                    + position_groups.get("WR", [])
-                    + position_groups.get("TE", [])
-                )
-
-            # Remove already used players
-            eligible_players = [
-                player for player in eligible_players if player not in used_players
-            ]
-            eligible_players.sort(
-                key=lambda x: x.stats[week].get("points", 0), reverse=True
-            )
-            for i in range(flex_count):
-                if i < len(eligible_players):
-                    player = eligible_players.pop(0)
-                    position_groups[player.position].pop(0)
-                    if "FLEX" not in best_lineup:
-                        best_lineup["FLEX"] = []
-                    best_lineup["FLEX"].append(convert_player(player, week))
-                    used_players.add(player)
-    # Convert all position_group lists so players converted players
-    for position in position_groups:
-        position_groups[position] = [
-            convert_player(player, week) for player in position_groups[position]
-        ]
-    return {"best_lineup": best_lineup, "bench": position_groups}
-
-
 @app.get("/leagues/{league_id}/teams/lineups/best-drafted")
 def get_best_lineup_drafted(
     league_id: str,
@@ -127,32 +50,54 @@ def get_best_lineup_drafted(
     week: int = Query(..., alias="week"),
     db_session: Session = Depends(get_db),
 ):
-    # Already loaded drafted players for this league
-    # Go through them, and use player_info() method to create Player object
-    # Fill out new version of player_week table using this data
+    # TODO: Need to do ETL for all players anyway
+    # 1. Change fumbles to fumbles lost
+    # 2. Maybe just wholesale adopt ESPN scoring settings and save them in the database
+    # 3. Include D/ST and K
+    # 4.For extra-weird stat categories - should we calculate during ETL and save in the database?
 
-    # Should then be able to fill out this endpoint
+    # TODO: Also need to consider if we want to directly return all weeks
 
-    # How are we going to get stats for players not on team during week of matchup
+    league = db.get_league_season_by_platform_league_id(league_id, 2024, db_session)
+    lineup_config = league.lineup_config
+    league_lineup = LeagueLineupSettings(**lineup_config)
 
-    # Get league season from db
-    # Add new column to draft_team to show if weekly player stats loaded
-    # Add new table to show weekly player stats
+    scoring_config = league.scoring_config
 
-    cache_key = (league_id, 2024)
-    if cache_key in cache:
-        espn_league = cache[cache_key]
-        logger.info
-    else:
-        extractor = ESPNExtractor(league_id, 2024, config.espn_s2, config.espn_swid)
-        espn_league: League = extractor.extract_league()
-        print(cache_key)
-        cache[cache_key] = espn_league
-        logger.info(f"Cache miss. Extracted league {league_id} from ESPN")
+    # Get set of drafted players for the team
+    missing = db.get_draft_team_missing("ESPN", league_id, str(teamId), db_session)
 
-    info = espn_league.player_info("Patrick Mahomes")
-    print(espn_league.finalScoringPeriod)
-    print(info.stats.keys())
+    if missing:
+        # TODO: Implement ETL for missing players, including DST and K
+        # This should be irrelevant with new plan
+        logger.error(f"{len(missing)} players are missing from player_weeks table")
+        raise Exception(f"ETL for {len(missing)} missing player_weeks not loaded yet")
+
+    player_week_rows = db.get_draft_team_weekly_rows(
+        "ESPN", league_id, str(teamId), db_session, week
+    )
+
+    scoring_config["receptions"] = scoring_config.pop("rec")
+    scoring_config["fumbles"] = scoring_config.pop("fum_lost")
+
+    new_players: List[Player] = []
+    for player_week_row in player_week_rows:
+        player = player_week_row.PlayerWeek
+        points = 0
+        for k, v in vars(player).items():
+            if k in scoring_config.keys():
+                points += v * scoring_config[k]
+        new_players.append(
+            Player(
+                name=player_week_row.first_name + " " + player_week_row.last_name,
+                id=player.player_id,
+                position=player_week_row.position,
+                points=round(points, 2),
+            )
+        )
+    league_lineup = LeagueLineupSettings(**lineup_config)
+    print(new_players)
+    return get_best_weekly_lineup(league_lineup, new_players, week)
 
 
 @app.get("/leagues/{league_id}/teams/lineups/actual")
@@ -175,60 +120,45 @@ def get_best_possible_lineup(
     db: Session = Depends(get_db),
 ):
     # TODO:
-    # 1. Consider replacing ESPN data with database data
-    # ALTHOUGH - can we alleviate need for db just by caching ESPN data intelligently?
-
-    start_time = time.time()
-    extractor_start = time.time()
-
+    # 1. Consider replacing ESPN data with database data ALTHOUGH - can we alleviate need for db just by caching ESPN data intelligently?
+    #  - Run tests to see if faster to pull from cached espn league than DB
     cache_key = (league_id, 2024)
-    print(cache_key)
     if cache_key in cache:
         espn_league = cache[cache_key]
-        logger.info
+        logger.info(f"Cache hit. Retrieved league {league_id} from cache")
     else:
         extractor = ESPNExtractor(league_id, 2024, config.espn_s2, config.espn_swid)
         espn_league: League = extractor.extract_league()
-        print(cache_key)
         cache[cache_key] = espn_league
         logger.info(f"Cache miss. Extracted league {league_id} from ESPN")
-    extractor_end = time.time()
-    logger.info(f"Extractor time: {extractor_end - extractor_start:.4f} seconds")
 
     # Get box scores
-    box_scores_start = time.time()
     box_scores = espn_league.box_scores(week)
-    box_scores_end = time.time()
-    logger.info(f"Box scores time: {box_scores_end - box_scores_start:.4f} seconds")
 
     # Find the team and lineup
-    team_start = time.time()
     for box_score in box_scores:
         if (
             not isinstance(box_score.home_team, int)
             and box_score.home_team.team_id == teamId
         ):
-            team = box_score.home_team
             lineup = box_score.home_lineup
         elif (
             not isinstance(box_score.away_team, int)
             and box_score.away_team.team_id == teamId
         ):
-            team = box_score.away_team
             lineup = box_score.away_lineup
-    team_end = time.time()
-    logger.info(f"Team and lineup time: {team_end - team_start:.4f} seconds")
 
-    # Get the best possible lineup
-    best_lineup_start = time.time()
-    bpl = _get_best_possible_lineup(
-        espn_league.settings.position_slot_counts, lineup, week
-    )
-    best_lineup_end = time.time()
-    logger.info(
-        f"Best lineup calculation time: {best_lineup_end - best_lineup_start:.4f} seconds"
-    )
-
-    end_time = time.time()
-    logger.info(f"Total time: {end_time - start_time:.4f} seconds")
-    return bpl
+    # Clean keys in position_Slot_counts of extra punctuation
+    new_players: List[Player] = []
+    for player in lineup:
+        points = player.stats.get(week, {}).get("points", 0)
+        new_players.append(
+            Player(
+                name=player.name,
+                id=player.playerId,
+                position=player.position,
+                points=points,
+            )
+        )
+    league_lineup = LeagueLineupSettings(**espn_league.settings.position_slot_counts)
+    return get_best_weekly_lineup(league_lineup, new_players, week)

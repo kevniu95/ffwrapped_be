@@ -221,7 +221,7 @@ def get_players_by_espn_id(espn_ids: List[int], db: Session = None) -> List[orm.
 
 
 def get_league_season_by_platform_league_id(
-    league_id: str | int, db: Session = None
+    league_id: str | int, season: int, db: Session = None
 ) -> orm.LeagueSeason:
     if db is None:
         logger.error(
@@ -232,6 +232,7 @@ def get_league_season_by_platform_league_id(
         league = (
             db.query(orm.LeagueSeason)
             .filter(orm.LeagueSeason.platform_league_id.in_([str(league_id)]))
+            .filter(orm.LeagueSeason.season == season)
             .one_or_none()
         )
     except:
@@ -255,6 +256,86 @@ def delete_all_rows(table: orm.Base, db=None):
     finally:
         if new_session:
             db.close()
+
+
+def get_draft_team_weekly_rows(
+    platform_name: str,
+    platform_league_id: str,
+    platform_team_id: str,
+    db_session: Session,
+    week: int = None,
+):
+    # Query to get the draft team rows
+    draft_team_rows = (
+        db_session.query(
+            orm.PlayerWeek,
+            orm.PlayerSeason.position.label("position"),
+            orm.Player.first_name.label("first_name"),
+            orm.Player.last_name.label("last_name"),
+        )
+        .join(orm.DraftTeam, orm.PlayerWeek.player_id == orm.DraftTeam.player_id)
+        .join(
+            orm.LeagueTeam,
+            orm.DraftTeam.league_team_id == orm.LeagueTeam.league_team_id,
+        )
+        .join(
+            orm.LeagueSeason,
+            orm.LeagueTeam.league_season_id == orm.LeagueSeason.league_season_id,
+        )
+        .join(orm.Platform, orm.LeagueSeason.platform_id == orm.Platform.platform_id)
+        .join(
+            orm.PlayerSeason,
+            (
+                orm.PlayerWeek.player_id == orm.PlayerSeason.player_id
+                and orm.PlayerWeek.season == orm.PlayerSeason.season
+            ),
+        )
+        .join(orm.Player, (orm.PlayerWeek.player_id == orm.Player.player_id))
+        .filter(
+            orm.Platform.platform_name == platform_name,
+            orm.LeagueSeason.platform_league_id == platform_league_id,
+            orm.LeagueTeam.platform_team_id == platform_team_id,
+        )
+    )
+    if week:
+        draft_team_rows = draft_team_rows.filter(orm.PlayerWeek.week == week)
+    return draft_team_rows.all()
+
+
+def get_draft_team_missing(
+    platform_name: str,
+    platform_league_id: str,
+    platform_team_id: str,
+    db_session: Session,
+):
+    # Query to get the draft team rows that don't have player_week entries
+    draft_team_missing = (
+        db_session.query(orm.DraftTeam)
+        .join(
+            orm.LeagueTeam,
+            orm.DraftTeam.league_team_id == orm.LeagueTeam.league_team_id,
+        )
+        .join(
+            orm.LeagueSeason,
+            orm.LeagueTeam.league_season_id == orm.LeagueSeason.league_season_id,
+        )
+        .join(orm.Platform, orm.LeagueSeason.platform_id == orm.Platform.platform_id)
+        .outerjoin(  # Use outerjoin to include rows that don't match
+            orm.PlayerWeek,
+            (orm.DraftTeam.player_id == orm.PlayerWeek.player_id)
+            & (orm.PlayerWeek.season == orm.LeagueSeason.season),
+        )
+        .filter(
+            orm.Platform.platform_name == platform_name,
+            orm.LeagueSeason.platform_league_id == platform_league_id,
+            orm.LeagueTeam.platform_team_id == platform_team_id,
+            orm.PlayerWeek.player_id.is_(
+                None
+            ),  # Only include rows where there's no matching player_week
+        )
+        .all()
+    )
+    return draft_team_missing
 
 
 def execute_text_command(txt: str, db) -> None:

@@ -223,3 +223,30 @@ def validate_scoring_format(scoring_format: Dict) -> bool:
         if key not in STANDARDIZED_SCORING_RULES:
             return False
     return True
+
+
+STATS_TO_DB_COLUMNS = {
+    # Passing Stats
+    "passingCompletions": "pass_cmp",
+    "passingAttempts": "pass_att",
+    "passingYards": "pass_yds",
+    "passingTouchdowns": "pass_td",
+    "passingInterceptions": "pass_int",
+    "passingTimesSacked": "sacks",
+    # Rushing Stats
+    "rushingAttempts": "rush_att",
+    "rushingYards": "rush_yds",
+    "rushingTouchdowns": "rush_td",
+    # Receiving Stats
+    "receivingTargets": "targets",
+    "receivingReceptions": "receptions",
+    "receivingYards": "rec_yds",
+    "receivingTouchdowns": "rec_td",
+    # Miscellaneous
+    "fumbles": "fumbles",
+    # Kicking Stats
+    "madeExtraPoints": "xpm",
+    "attemptedExtraPoints": "xpa",
+    "madeFieldGoals": "fgm",
+    "attemptedFieldGoals": "fga",
+}

@@ -4,7 +4,7 @@ from typing import List, Dict
 
 from espn_api.base_pick import BasePick
 from espn_api.football.box_score import BoxScore
-from espn_api.football import League,
+from espn_api.football import League
 from ffwrapped_be.etl.extractors.espn_extractor import ESPNExtractor
 from ffwrapped_be.db import databases as db
 from ffwrapped_be.config import config
@@ -43,7 +43,7 @@ class ESPNTransformLoader:
     def _get_existing_db_league(self, espn_league: League) -> LeagueSeason:
         try:
             league_db: LeagueSeason = db.get_league_season_by_platform_league_id(
-                espn_league.league_id, self.db
+                espn_league.league_id, espn_league.year, self.db
             )
         except:
             logger.error(
@@ -185,7 +185,7 @@ class ESPNTransformLoader:
             f"Successfully inserted draft picks for league {self.espn_league.league_id}"
         )
 
-    def __update_espn_to_db_map(self, player_espn_ids: List[str]) -> None:
+    def _update_espn_to_db_map(self, player_espn_ids: List[str]) -> None:
         requested_players = [
             espn_id
             for espn_id in player_espn_ids
@@ -216,7 +216,7 @@ class ESPNTransformLoader:
             self._platform_to_league_id_mapping = platform_to_league_id_mapping
         return self._platform_to_league_id_mapping
 
-    def __transform_load_box_score_team(
+    def _transform_load_box_score_team(
         self, box_score: BoxScore, week: int, home_team: bool
     ):
         team = box_score.home_team if home_team else box_score.away_team
@@ -229,7 +229,7 @@ class ESPNTransformLoader:
             return
 
         player_espn_ids = [str(player.playerId) for player in lineup]
-        self.__update_espn_to_db_map(player_espn_ids)
+        self._update_espn_to_db_map(player_espn_ids)
         weekly_starter_entries = []
         for player in lineup:
             if player.lineupSlot not in ["K", "D/ST"]:
@@ -260,10 +260,10 @@ class ESPNTransformLoader:
             logger.info("Extracting box scores for week %s", week)
             box_scores = league.box_scores(week)
             for box_score in box_scores:
-                self.__transform_load_box_score_team(
+                self._transform_load_box_score_team(
                     box_score, week=week, home_team=True
                 )
-                self.__transform_load_box_score_team(
+                self._transform_load_box_score_team(
                     box_score, week=week, home_team=False
                 )
 
