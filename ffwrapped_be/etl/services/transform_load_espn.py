@@ -4,7 +4,7 @@ from typing import List, Dict
 
 from espn_api.base_pick import BasePick
 from espn_api.football.box_score import BoxScore
-from espn_api.football import League
+from espn_api.football import Team, League
 from ffwrapped_be.etl.extractors.espn_extractor import ESPNExtractor
 from ffwrapped_be.db import databases as db
 from ffwrapped_be.config import config
@@ -14,6 +14,7 @@ from ffwrapped_be.app.data_models.orm import (
     DraftTeam,
     WeeklyStarter,
     PlayerSeason,
+    PlayerWeekESPN,
 )
 from ffwrapped_be.etl import utils
 
@@ -267,6 +268,50 @@ class ESPNTransformLoader:
                     box_score, week=week, home_team=False
                 )
 
+    def transform_load_player_week(self):
+        """
+        - Picks players off `players` table and uses ESPN API to determine weekly statistics
+        - After this is done, you still need a separate ETL for D/ST and Kickers
+        """
+        BATCH_SIZE = 100
+        league = self.espn_league
+        players = db.get_players_with_espn_id(offset=0, db=self.db)
+        logger.info(f"Successfully {len(players)} retrieved players from db")
+
+        player_week_entries = []
+        for index, player in enumerate(players, 1):
+            espn_id = int(player.espn_id)
+            player_info = league.player_info(playerId=espn_id)
+
+            for week in range(1, 19):
+                mapped_data = {}
+                if week not in player_info.stats:
+                    continue
+                for key, value in player_info.stats[week]["breakdown"].items():
+                    if key in utils.ESPN_PLAYER_STATS_TO_DB.keys():
+                        mapped_data[utils.ESPN_PLAYER_STATS_TO_DB[key]] = value
+                mapped_data.update(
+                    {
+                        "player_id": player.player_id,
+                        "season": league.year,
+                        "week": week,
+                        "tm_id": player_info.proTeam,
+                    }
+                )
+                player_week_entries.append(mapped_data)
+
+            if index % BATCH_SIZE == 0:
+                logger.info(f"Inserting weekly data for last {BATCH_SIZE} players")
+                db.bulk_insert(player_week_entries, PlayerWeekESPN, db=self.db)
+                player_week_entries = []
+
+        if player_week_entries:
+            remaining_count = len(player_week_entries)
+            logger.info(
+                f"Processing weekly data for final batch of {remaining_count} player weeks"
+            )
+            db.bulk_insert(player_week_entries, PlayerWeekESPN, db=self.db)
+
     def transform_load_player_season(self):
         """
         - Picks players off `players` table and uses ESPN API to determine position
@@ -310,7 +355,13 @@ if __name__ == "__main__":
     espnTransformLoader = ESPNTransformLoader(
         config.espn_league_id, 2024, config.espn_s2, config.espn_swid
     )
-    espnTransformLoader.transform_load_player_season()
+
+    # league = espnTransformLoader.espn_league
+    # a = league.player_info(playerId=-16001)
+    # print(a.name)
+    # print(a.stats[1]["breakdown"])
+    espnTransformLoader.transform_load_player_week()
+    # espnTransformLoader.transform_load_player_season()
 
     # espnTransformLoader.transform_load_league()
     # espnTransformLoader.transform_load_teams()

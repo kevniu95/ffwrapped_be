@@ -65,6 +65,76 @@ class TeamName(Base):
     __table_args__ = (UniqueConstraint("season", "tm_id"),)
 
 
+class PlayerWeekESPN(Base):
+    __tablename__ = "player_week_espn"
+    player_week_espn_id = Column(Integer, primary_key=True)
+    player_id = Column(Integer, ForeignKey("player.player_id"))
+    season = Column(Integer, nullable=False)
+    week = Column(Integer, nullable=False)
+    tm_id = Column(String)  # TODO: Map this to ESPN taem names?
+    # Passing Stats
+    passing_attempts = Column(Integer)
+    passing_completions = Column(Integer)
+    passing_yards = Column(Integer)
+    passing_touchdowns = Column(Integer)
+    passing_40yard_tds = Column(Integer)
+    passing_50yard_tds = Column(Integer)
+    passing_2pt_conversions = Column(Integer)
+    passing_interceptions = Column(Integer)
+    # Rushing Stats
+    rushing_attempts = Column(Integer)
+    rushing_yards = Column(Integer)
+    rushing_touchdowns = Column(Integer)
+    rushing_40yard_tds = Column(Integer)
+    rushing_50yard_tds = Column(Integer)
+    rushing_2pt_conversions = Column(Integer)
+    # Receiving Stats
+    receiving_targets = Column(Integer)
+    receiving_receptions = Column(Integer)
+    receiving_yards = Column(Integer)
+    receiving_touchdowns = Column(Integer)
+    receiving_40yard_tds = Column(Integer)
+    receiving_50yard_tds = Column(Integer)
+    receiving_2pt_conversions = Column(Integer)
+    # General offensive stats
+    fumbles = Column(Integer)
+    fumbles_lost = Column(Integer)
+    fumbles_recovered_for_td = Column(Integer)
+    passing_sacks = Column(Integer)
+    # Kicking stats
+    kicking_xpm = Column(Integer)
+    kicking_xpa = Column(Integer)
+    kicking_fgm_0_39 = Column(Integer)
+    kicking_fga_0_39 = Column(Integer)
+    kicking_fgm_40_49 = Column(Integer)
+    kicking_fga_40_49 = Column(Integer)
+    kicking_fgm_50_59 = Column(Integer)
+    kicking_fga_50_59 = Column(Integer)
+    kicking_fgm_60_plus = Column(Integer)
+    kicking_fga_60_plus = Column(Integer)
+    # Defensive stats
+    defensive_blocked_kick_return_tds = Column(Integer)
+    defensive_interceptions = Column(Integer)
+    defensive_fumble_recoveries = Column(Integer)
+    defensive_blocked_kicks = Column(Integer)
+    defensive_safeties = Column(Integer)
+    defensive_sacks = Column(Integer)
+    kickoff_return_touchdowns = Column(Integer)
+    punt_return_touchdowns = Column(Integer)
+    interception_return_touchdowns = Column(Integer)
+    fumble_return_touchdowns = Column(Integer)
+    defensive_forced_fumbles = Column(Integer)
+    defensive_assisted_tackles = Column(Integer)
+    defensive_solo_tackles = Column(Integer)
+    defensive_passes_defended = Column(Integer)
+    kickoff_return_yards = Column(Integer)
+    punt_return_yards = Column(Integer)
+    punts_returned = Column(Integer)
+    defensive_points_allowed = Column(Integer)
+    defensive_yards_allowed = Column(Integer)
+    defensive_2pt_return = Column(Integer)
+
+
 class PlayerWeek(Base):
     __tablename__ = "player_week"
     player_week_id = Column(Integer, primary_key=True)
