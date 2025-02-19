@@ -1,19 +1,19 @@
+from collections import defaultdict
 import logging
-import time
-import re
 import cachetools
-from typing import Dict, List
+from typing import List, Optional, Dict
 from fastapi import FastAPI, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from ffwrapped_be.db import databases as db
 from ffwrapped_be.db.databases import get_db
-from ffwrapped_be.app.data_models.orm import LeagueSeason, LeagueTeam, DraftTeam
+from ffwrapped_be.etl import utils
 from ffwrapped_be.etl.extractors.espn_extractor import ESPNExtractor
 from ffwrapped_be.config import config
 from ffwrapped_be.app.service.best_lineup import (
     LeagueLineupSettings,
     Player,
     get_best_weekly_lineup,
+    BestLineupResponse,
 )
 from fastapi.exceptions import HTTPException
 
@@ -47,17 +47,10 @@ def update_weekly_stat_names():
 def get_best_lineup_drafted(
     league_id: str,
     teamId: int = Query(..., alias="teamId"),
-    week: int = Query(..., alias="week"),
+    week: Optional[int] = Query(None, alias="week"),
     db_session: Session = Depends(get_db),
 ):
-    # TODO: Need to do ETL for all players anyway
-    # 1. Change fumbles to fumbles lost
-    # 2. Maybe just wholesale adopt ESPN scoring settings and save them in the database
-    # 3. Include D/ST and K
-    # 4.For extra-weird stat categories - should we calculate during ETL and save in the database?
-
-    # TODO: Also need to consider if we want to directly return all weeks
-
+    # TODO: Include D/ST and K
     league = db.get_league_season_by_platform_league_id(league_id, 2024, db_session)
     lineup_config = league.lineup_config
     league_lineup = LeagueLineupSettings(**lineup_config)
@@ -66,38 +59,56 @@ def get_best_lineup_drafted(
 
     # Get set of drafted players for the team
     missing = db.get_draft_team_missing("ESPN", league_id, str(teamId), db_session)
-
     if missing:
-        # TODO: Implement ETL for missing players, including DST and K
-        # This should be irrelevant with new plan
+        # TODO: Include D/ST and K to draft team
         logger.error(f"{len(missing)} players are missing from player_weeks table")
         raise Exception(f"ETL for {len(missing)} missing player_weeks not loaded yet")
 
-    player_week_rows = db.get_draft_team_weekly_rows(
-        "ESPN", league_id, str(teamId), db_session, week
+    # Get the ESPN-based player_week rows for the team
+    player_week_rows = db.get_draft_team_weekly_espn_rows(
+        league_id, str(teamId), db_session, week
     )
 
-    scoring_config["receptions"] = scoring_config.pop("rec")
-    scoring_config["fumbles"] = scoring_config.pop("fum_lost")
-
-    new_players: List[Player] = []
+    week_rows = defaultdict(list)
     for player_week_row in player_week_rows:
-        player = player_week_row.PlayerWeek
-        points = 0
-        for k, v in vars(player).items():
-            if k in scoring_config.keys():
-                points += v * scoring_config[k]
-        new_players.append(
-            Player(
-                name=player_week_row.first_name + " " + player_week_row.last_name,
-                id=player.player_id,
-                position=player_week_row.position,
-                points=round(points, 2),
+        week_rows[player_week_row.PlayerWeekESPN.week].append(player_week_row)
+
+    bestLineupResponses: Dict[str, BestLineupResponse] = {}
+    for week in range(1, 18):
+        new_players: List[Player] = []
+        for player_week_row in week_rows[week]:
+            player = player_week_row.PlayerWeekESPN
+            points = 0
+            newDict = {
+                utils.DB_PLAYER_STATS_TO_ESPN.get(k, k): v
+                for k, v in vars(player).items()
+                if v is not None
+            }
+            newDict = utils.generate_derived_espn_statistics(newDict)
+            newDict = {
+                utils.ESPN_PLAYER_STATS_TO_SCORING_CONFIG.get(k, k): v
+                for k, v in newDict.items()
+                if v is not None
+            }
+            for k, v in newDict.items():
+                if k in scoring_config.keys():
+                    points += v * scoring_config[k]
+            new_players.append(
+                Player(
+                    name=player_week_row.first_name + " " + player_week_row.last_name,
+                    id=player.player_id,
+                    position=player_week_row.position,
+                    points=round(points, 2),
+                )
             )
+        print(f"Adding to bestLineupResponses for week {week}")
+        bestLineupResponses[week] = get_best_weekly_lineup(
+            league_lineup, new_players, week
         )
-    league_lineup = LeagueLineupSettings(**lineup_config)
-    print(new_players)
-    return get_best_weekly_lineup(league_lineup, new_players, week)
+
+    print(bestLineupResponses.keys())
+    print(bestLineupResponses[17])
+    return bestLineupResponses
 
 
 @app.get("/leagues/{league_id}/teams/lineups/actual")
@@ -116,12 +127,14 @@ def get_actual_lineup(
 def get_best_possible_lineup(
     league_id: str,
     teamId: int = Query(..., alias="teamId"),
-    week: int = Query(..., alias="week"),
-    db: Session = Depends(get_db),
+    week: Optional[int] = Query(None, alias="week"),
+    db_session: Session = Depends(get_db),
 ):
     # TODO:
-    # 1. Consider replacing ESPN data with database data ALTHOUGH - can we alleviate need for db just by caching ESPN data intelligently?
-    #  - Run tests to see if faster to pull from cached espn league than DB
+    # 1. Run tests to see if faster to pull from cached espn league than DB
+    # 2. Save weekly lineups to DB to reduce time on this endpoint
+    league = db.get_league_season_by_platform_league_id(league_id, 2024, db_session)
+    scoring_config = league.scoring_config
     cache_key = (league_id, 2024)
     if cache_key in cache:
         espn_league = cache[cache_key]
@@ -132,33 +145,53 @@ def get_best_possible_lineup(
         cache[cache_key] = espn_league
         logger.info(f"Cache miss. Extracted league {league_id} from ESPN")
 
-    # Get box scores
-    box_scores = espn_league.box_scores(week)
-
-    # Find the team and lineup
-    for box_score in box_scores:
-        if (
-            not isinstance(box_score.home_team, int)
-            and box_score.home_team.team_id == teamId
-        ):
-            lineup = box_score.home_lineup
-        elif (
-            not isinstance(box_score.away_team, int)
-            and box_score.away_team.team_id == teamId
-        ):
-            lineup = box_score.away_lineup
-
     # Clean keys in position_Slot_counts of extra punctuation
-    new_players: List[Player] = []
-    for player in lineup:
-        points = player.stats.get(week, {}).get("points", 0)
-        new_players.append(
-            Player(
+    bestLineupResponses: Dict[str, BestLineupResponse] = {}
+    for week in range(1, 18):
+        # Get box scores
+        box_scores = espn_league.box_scores(week)
+
+        # Find the team and lineup
+        for box_score in box_scores:
+            if (
+                not isinstance(box_score.home_team, int)
+                and box_score.home_team.team_id == teamId
+            ):
+                lineup = box_score.home_lineup
+            elif (
+                not isinstance(box_score.away_team, int)
+                and box_score.away_team.team_id == teamId
+            ):
+                lineup = box_score.away_lineup
+
+        new_players: List[Player] = []
+
+        for player in lineup:
+            newDict = player.stats.get(week, {}).get("breakdown", {})
+            newDict = {
+                utils.ESPN_PLAYER_STATS_TO_SCORING_CONFIG.get(k, k): v
+                for k, v in newDict.items()
+                if v is not None
+            }
+            points = 0
+            for k, v in newDict.items():
+                if k in scoring_config.keys():
+                    points += v * scoring_config[k]
+            if (points - player.stats.get(week, {}).get("points", 0)) > 0.001:
+                logger.error(
+                    f"Player {player.name} has a discrepancy between calculated points and ESPN points in week {week}"
+                )
+            new_player = Player(
                 name=player.name,
                 id=player.playerId,
                 position=player.position,
-                points=points,
+                points=round(points, 2),
             )
+            new_players.append(new_player)
+        league_lineup = LeagueLineupSettings(
+            **espn_league.settings.position_slot_counts
         )
-    league_lineup = LeagueLineupSettings(**espn_league.settings.position_slot_counts)
-    return get_best_weekly_lineup(league_lineup, new_players, week)
+        bestLineupResponses[week] = get_best_weekly_lineup(
+            league_lineup, new_players, week
+        )
+    return bestLineupResponses

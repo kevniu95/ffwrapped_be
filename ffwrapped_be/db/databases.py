@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Any
 from sqlalchemy import create_engine, insert, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import sessionmaker, Session
@@ -170,7 +170,7 @@ def get_player_metadata_by_season_chunk(
     return metadata
 
 
-def get_players_with_espn_id(db=None) -> List[orm.Player]:
+def get_players_with_espn_id(offset: int = 0, db=None) -> List[orm.Player]:
     if not db:
         logger.error("No valid db was supplied to method to get players with ESPN id!")
         return None
@@ -179,6 +179,7 @@ def get_players_with_espn_id(db=None) -> List[orm.Player]:
             db.query(orm.Player)
             .filter(orm.Player.espn_id.isnot(None))
             .order_by(orm.Player.player_id)
+            .offset(offset)
             .all()
         )
     except:
@@ -258,13 +259,57 @@ def delete_all_rows(table: orm.Base, db=None):
             db.close()
 
 
+def get_draft_team_weekly_espn_rows(
+    platform_league_id: str,
+    platform_team_id: str,
+    db_session: Session,
+    week: int = None,
+) -> List[Any]:
+    # Query to get the draft team rows
+    draft_team_rows = (
+        db_session.query(
+            orm.PlayerWeekESPN,
+            orm.PlayerSeason.position.label("position"),
+            orm.Player.first_name.label("first_name"),
+            orm.Player.last_name.label("last_name"),
+        )
+        .join(orm.DraftTeam, orm.PlayerWeekESPN.player_id == orm.DraftTeam.player_id)
+        .join(
+            orm.LeagueTeam,
+            orm.DraftTeam.league_team_id == orm.LeagueTeam.league_team_id,
+        )
+        .join(
+            orm.LeagueSeason,
+            orm.LeagueTeam.league_season_id == orm.LeagueSeason.league_season_id,
+        )
+        .join(orm.Platform, orm.LeagueSeason.platform_id == orm.Platform.platform_id)
+        .join(
+            orm.PlayerSeason,
+            (
+                orm.PlayerWeekESPN.player_id == orm.PlayerSeason.player_id
+                and orm.PlayerWeekESPN.season == orm.PlayerSeason.season
+            ),
+        )
+        .join(orm.Player, (orm.PlayerWeekESPN.player_id == orm.Player.player_id))
+        .filter(
+            orm.Platform.platform_name == "ESPN",
+            orm.LeagueSeason.platform_league_id == platform_league_id,
+            orm.LeagueTeam.platform_team_id == platform_team_id,
+        )
+        .order_by(orm.PlayerWeekESPN.week, orm.PlayerSeason.position)
+    )
+    if week:
+        draft_team_rows = draft_team_rows.filter(orm.PlayerWeekESPN.week == week)
+    return draft_team_rows.all()
+
+
 def get_draft_team_weekly_rows(
     platform_name: str,
     platform_league_id: str,
     platform_team_id: str,
     db_session: Session,
     week: int = None,
-):
+) -> List[Any]:
     # Query to get the draft team rows
     draft_team_rows = (
         db_session.query(

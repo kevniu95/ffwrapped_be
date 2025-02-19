@@ -79,7 +79,7 @@ def _get_flex_positions(
 
 def get_best_weekly_lineup(
     league_lineup: LeagueLineupSettings, lineup: List[Player], week: int
-):
+) -> BestLineupResponse:
     # Create initial position groups and fill best lineup with them
     league_lineup_dict = league_lineup.model_dump()
     sorted_position_groups = _assemble_sorted_position_groups(lineup, "points")
