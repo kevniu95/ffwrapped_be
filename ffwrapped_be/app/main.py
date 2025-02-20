@@ -1,3 +1,4 @@
+import time
 from collections import defaultdict
 import logging
 import cachetools
@@ -73,7 +74,7 @@ def get_best_lineup_drafted(
     for player_week_row in player_week_rows:
         week_rows[player_week_row.PlayerWeekESPN.week].append(player_week_row)
 
-    bestLineupResponses: Dict[str, BestLineupResponse] = {}
+    bestLineupResponses: Dict[int, BestLineupResponse] = {}
     for week in range(1, 18):
         new_players: List[Player] = []
         for player_week_row in week_rows[week]:
@@ -102,12 +103,9 @@ def get_best_lineup_drafted(
                 )
             )
         print(f"Adding to bestLineupResponses for week {week}")
-        bestLineupResponses[week] = get_best_weekly_lineup(
+        bestLineupResponses[int(week)] = get_best_weekly_lineup(
             league_lineup, new_players, week
         )
-
-    print(bestLineupResponses.keys())
-    print(bestLineupResponses[17])
     return bestLineupResponses
 
 
@@ -123,7 +121,7 @@ def get_actual_lineup(
     return {"team_id": teamId, "week": week, "actual_lineup": "data"}
 
 
-@app.get("/leagues/{leauge_id}/teams/lineups/best-actual")
+@app.get("/leagues/{league_id}/teams/lineups/best-actual")
 def get_best_possible_lineup(
     league_id: str,
     teamId: int = Query(..., alias="teamId"),
@@ -133,9 +131,22 @@ def get_best_possible_lineup(
     # TODO:
     # 1. Run tests to see if faster to pull from cached espn league than DB
     # 2. Save weekly lineups to DB to reduce time on this endpoint
+
+    # Timing start
+    start_time = time.time()
+
+    # Get league from DB
+    db_start_time = time.time()
     league = db.get_league_season_by_platform_league_id(league_id, 2024, db_session)
+    db_end_time = time.time()
+    logger.info(
+        f"Time to get league from DB: {db_end_time - db_start_time:.2f} seconds"
+    )
+
     scoring_config = league.scoring_config
     cache_key = (league_id, 2024)
+
+    espn_start_time = time.time()
     if cache_key in cache:
         espn_league = cache[cache_key]
         logger.info(f"Cache hit. Retrieved league {league_id} from cache")
@@ -144,12 +155,26 @@ def get_best_possible_lineup(
         espn_league: League = extractor.extract_league()
         cache[cache_key] = espn_league
         logger.info(f"Cache miss. Extracted league {league_id} from ESPN")
+    espn_end_time = time.time()
+    logger.info(
+        f"Time to get ESPN league: {espn_end_time - espn_start_time:.2f} seconds"
+    )
+
+    total_time_for_box_scores = 0
 
     # Clean keys in position_Slot_counts of extra punctuation
-    bestLineupResponses: Dict[str, BestLineupResponse] = {}
+    bestLineupResponses: Dict[int, BestLineupResponse] = {}
     for week in range(1, 18):
+        week_start_time = time.time()
+
         # Get box scores
+        box_scores_start_time = time.time()
         box_scores = espn_league.box_scores(week)
+        box_scores_end_time = time.time()
+        total_time_for_box_scores += box_scores_end_time - box_scores_start_time
+        logger.info(
+            f"Time to get box scores for week {week}: {box_scores_end_time - box_scores_start_time:.2f} seconds"
+        )
 
         # Find the team and lineup
         for box_score in box_scores:
@@ -166,6 +191,7 @@ def get_best_possible_lineup(
 
         new_players: List[Player] = []
 
+        players_start_time = time.time()
         for player in lineup:
             newDict = player.stats.get(week, {}).get("breakdown", {})
             newDict = {
@@ -188,10 +214,31 @@ def get_best_possible_lineup(
                 points=round(points, 2),
             )
             new_players.append(new_player)
+        players_end_time = time.time()
+        logger.info(
+            f"Time to instantiate new players and calculate points for week {week}: {players_end_time - players_start_time:.2f} seconds"
+        )
+
+        lineup_start_time = time.time()
         league_lineup = LeagueLineupSettings(
             **espn_league.settings.position_slot_counts
         )
-        bestLineupResponses[week] = get_best_weekly_lineup(
+        bestLineupResponses[int(week)] = get_best_weekly_lineup(
             league_lineup, new_players, week
         )
+        lineup_end_time = time.time()
+        logger.info(
+            f"Time to calculate best weekly lineup for week {week}: {lineup_end_time - lineup_start_time:.2f} seconds"
+        )
+
+        week_end_time = time.time()
+        logger.info(
+            f"Total time for week {week}: {week_end_time - week_start_time:.2f} seconds"
+        )
+    logger.info("Total time for box scores: %.2f seconds", total_time_for_box_scores)
+    total_end_time = time.time()
+    logger.info(
+        f"Total time for get_best_possible_lineup: {total_end_time - start_time:.2f} seconds"
+    )
+
     return bestLineupResponses

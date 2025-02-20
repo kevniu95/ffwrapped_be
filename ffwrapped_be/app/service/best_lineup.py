@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from collections import defaultdict
 from pydantic import BaseModel, Field
 
@@ -77,12 +77,31 @@ def _get_flex_positions(
     ]
 
 
+def reorder_dict(
+    original_dict: Dict[str, Any], desired_order: List[str]
+) -> Dict[str, Any]:
+    """
+    Reorder the dictionary to have keys in the desired order.
+
+    :param original_dict: The original dictionary.
+    :param desired_order: A list of keys in the desired order.
+    :return: A new dictionary with keys in the desired order.
+    """
+    return {key: original_dict[key] for key in desired_order if key in original_dict}
+
+
 def get_best_weekly_lineup(
     league_lineup: LeagueLineupSettings, lineup: List[Player], week: int
 ) -> BestLineupResponse:
     # Create initial position groups and fill best lineup with them
     league_lineup_dict = league_lineup.model_dump()
     sorted_position_groups = _assemble_sorted_position_groups(lineup, "points")
+    sorted_position_groups.pop(
+        "D/ST", None
+    )  # Undo once we have D/ST and K data everywhere (i.e., DB)
+    sorted_position_groups.pop(
+        "K", None
+    )  # Undo once we have D/ST and K data everywhere (i.e., DB)
     logger.info(f"Sorted following position groups: {sorted_position_groups.keys()}")
 
     best_lineup = defaultdict(list)
@@ -105,4 +124,7 @@ def get_best_weekly_lineup(
             player = eligible_players.pop(0)
             sorted_position_groups[player.position].pop(0)
             best_lineup[f"FLEX-{flex_position_number}"].append(player)
+    desired_order = ["QB", "RB", "WR", "TE", "FLEX-1", "D/ST", "K"]
+    best_lineup = reorder_dict(best_lineup, desired_order)
+    sorted_position_groups = reorder_dict(sorted_position_groups, desired_order)
     return BestLineupResponse(best_lineup=best_lineup, bench=sorted_position_groups)
