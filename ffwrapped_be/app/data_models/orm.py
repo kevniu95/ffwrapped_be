@@ -31,7 +31,6 @@ class Player(Base):
     __table_args__ = (UniqueConstraint("pfref_id"),)
     seasons = relationship("PlayerSeason", back_populates="player", lazy="joined")
     weeks = relationship("PlayerWeek", back_populates="player")
-    weeks_espn = relationship("PlayerWeekESPN", back_populates="player")
 
 
 class PlayerSeason(Base):
@@ -40,7 +39,7 @@ class PlayerSeason(Base):
     player_id = Column(Integer, ForeignKey("player.player_id"))
     season = Column(Integer, nullable=False)
     position = Column(String(50), nullable=False)
-    player = relationship("Player", back_populates="seasons")
+    player = relationship("Player", back_populates="seasons", lazy="joined")
     weeks_espn = relationship("PlayerWeekESPN", back_populates="player_season")
 
     __table_args__ = (UniqueConstraint("player_id", "season"),)
@@ -135,7 +134,6 @@ class PlayerWeekESPN(Base):
     defensive_yards_allowed = Column(Integer)
     defensive_2pt_return = Column(Integer)
 
-    player = relationship("Player", back_populates="weeks_espn", lazy="joined")
     player_season = relationship(
         "PlayerSeason", back_populates="weeks_espn", lazy="joined"
     )
