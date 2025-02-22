@@ -12,9 +12,9 @@ from ffwrapped_be.app.data_models.orm import (
     LeagueSeason,
     LeagueTeam,
     DraftTeam,
-    WeeklyStarter,
     PlayerSeason,
     PlayerWeekESPN,
+    LeagueWeeklyTeam,
 )
 from ffwrapped_be.etl import utils
 
@@ -231,7 +231,7 @@ class ESPNTransformLoader:
 
         player_espn_ids = [str(player.playerId) for player in lineup]
         self._update_espn_to_db_map(player_espn_ids)
-        weekly_starter_entries = []
+        league_weekly_team_entries = []
         for player in lineup:
             if player.lineupSlot not in ["K", "D/ST"]:
                 player_id = self.espn_to_db_map.get(player.playerId, {}).get(
@@ -241,7 +241,7 @@ class ESPNTransformLoader:
                     position = (
                         player.lineupSlot if player.lineupSlot != "RB/WR/TE" else "FLEX"
                     )
-                    weekly_starter = {
+                    weekly_team_member = {
                         "league_team_id": self.platform_to_league_id_mapping[
                             team.team_id
                         ],
@@ -249,11 +249,13 @@ class ESPNTransformLoader:
                         "player_id": player_id,
                         "lineup_position": position,
                     }
-                    weekly_starter_entries.append(weekly_starter)
+                    league_weekly_team_entries.append(weekly_team_member)
         logger.debug(
             "About to insert %s weekly starters for week %s", box_team_desc, week
         )
-        db.bulk_insert(weekly_starter_entries, record_type=WeeklyStarter, db=self.db)
+        db.bulk_insert(
+            league_weekly_team_entries, record_type=LeagueWeeklyTeam, db=self.db
+        )
 
     def transform_load_weekly_starters(self):
         league = self.espn_league
@@ -356,11 +358,13 @@ if __name__ == "__main__":
         config.espn_league_id, 2024, config.espn_s2, config.espn_swid
     )
 
+    espnTransformLoader.transform_load_league_weekly_team()
+
     # league = espnTransformLoader.espn_league
     # a = league.player_info(playerId=-16001)
     # print(a.name)
     # print(a.stats[1]["breakdown"])
-    espnTransformLoader.transform_load_player_week()
+    # espnTransformLoader.transform_load_player_week()
     # espnTransformLoader.transform_load_player_season()
 
     # espnTransformLoader.transform_load_league()

@@ -31,6 +31,7 @@ class Player(Base):
     __table_args__ = (UniqueConstraint("pfref_id"),)
     seasons = relationship("PlayerSeason", back_populates="player", lazy="joined")
     weeks = relationship("PlayerWeek", back_populates="player")
+    weeks_espn = relationship("PlayerWeekESPN", back_populates="player")
 
 
 class PlayerSeason(Base):
@@ -40,6 +41,7 @@ class PlayerSeason(Base):
     season = Column(Integer, nullable=False)
     position = Column(String(50), nullable=False)
     player = relationship("Player", back_populates="seasons")
+    weeks_espn = relationship("PlayerWeekESPN", back_populates="player_season")
 
     __table_args__ = (UniqueConstraint("player_id", "season"),)
 
@@ -68,8 +70,7 @@ class TeamName(Base):
 class PlayerWeekESPN(Base):
     __tablename__ = "player_week_espn"
     player_week_espn_id = Column(Integer, primary_key=True)
-    player_id = Column(Integer, ForeignKey("player.player_id"))
-    season = Column(Integer, nullable=False)
+    player_season_id = Column(Integer, ForeignKey("player_season.player_season_id"))
     week = Column(Integer, nullable=False)
     tm_id = Column(String)  # TODO: Map this to ESPN taem names?
     # Passing Stats
@@ -133,6 +134,11 @@ class PlayerWeekESPN(Base):
     defensive_points_allowed = Column(Integer)
     defensive_yards_allowed = Column(Integer)
     defensive_2pt_return = Column(Integer)
+
+    player = relationship("Player", back_populates="weeks_espn", lazy="joined")
+    player_season = relationship(
+        "PlayerSeason", back_populates="weeks_espn", lazy="joined"
+    )
 
 
 class PlayerWeek(Base):
@@ -220,6 +226,7 @@ class LeagueTeam(Base):
     platform_team_id = Column(String(50), nullable=False)
     team_name = Column(String(50))
     team_abbreviation = Column(String(50))
+    league_weekly_team = relationship("LeagueWeeklyTeam", back_populates="league_team")
 
     __table_args__ = (UniqueConstraint("league_season_id", "platform_team_id"),)
 
@@ -233,15 +240,17 @@ class DraftTeam(Base):
     draft_pick_number = Column(Integer, nullable=False)
 
 
-class WeeklyStarter(Base):
-    __tablename__ = "weekly_starter"
+class LeagueWeeklyTeam(Base):
+    __tablename__ = "league_weekly_team"
     league_team_id = Column(
         Integer, ForeignKey("league_team.league_team_id"), primary_key=True
     )
     week = Column(Integer, primary_key=True)
     player_id = Column(Integer, ForeignKey("player.player_id"), primary_key=True)
     lineup_position = Column(String(50), nullable=False)
-    # start = Column(Boolean, nullable=False)
+    league_team = relationship(
+        "LeagueTeam", back_populates="league_weekly_team", lazy="joined"
+    )
 
 
 # Transactions
