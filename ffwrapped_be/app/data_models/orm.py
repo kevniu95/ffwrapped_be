@@ -40,7 +40,7 @@ class PlayerSeason(Base):
     season = Column(Integer, nullable=False)
     position = Column(String(50), nullable=False)
     player = relationship("Player", back_populates="seasons", lazy="joined")
-    weeks_espn = relationship("PlayerWeekESPN", back_populates="player_season")
+    weeks = relationship("PlayerWeek", back_populates="player_season")
 
     __table_args__ = (UniqueConstraint("player_id", "season"),)
 
@@ -69,9 +69,11 @@ class TeamName(Base):
 class PlayerWeekESPN(Base):
     __tablename__ = "player_week_espn"
     player_week_espn_id = Column(Integer, primary_key=True)
-    player_season_id = Column(Integer, ForeignKey("player_season.player_season_id"))
-    week = Column(Integer, nullable=False)
-    tm_id = Column(String)  # TODO: Map this to ESPN taem names?
+    player_week_id = Column(Integer, ForeignKey("player_week.player_week_id"))
+    player_season_id = Column(
+        Integer, ForeignKey("player_season.player_season_id")
+    )  # TODO: Delete after migration of data
+    week = Column(Integer, nullable=False)  # TODO: Delete after migration of data
     # Passing Stats
     passing_attempts = Column(Integer)
     passing_completions = Column(Integer)
@@ -134,41 +136,27 @@ class PlayerWeekESPN(Base):
     defensive_yards_allowed = Column(Integer)
     defensive_2pt_return = Column(Integer)
 
-    player_season = relationship(
-        "PlayerSeason", back_populates="weeks_espn", lazy="joined"
-    )
+    player_week = relationship("PlayerWeek", back_populates="player_week_espn")
+    league_weekly_team = relationship(
+        "LeagueWeeklyTeam", back_populates="player_week_espn"
+    )  # WIll this work if they share same pK?
 
 
 class PlayerWeek(Base):
     __tablename__ = "player_week"
     player_week_id = Column(Integer, primary_key=True)
-    player_id = Column(Integer, ForeignKey("player.player_id"))
-    season = Column(Integer, nullable=False)
+    player_season_id = Column(Integer, ForeignKey("player_season.player_season_id"))
+    player_id = Column(
+        Integer, ForeignKey("player.player_id")
+    )  # TODO: Delete after migration of data
+    season = Column(Integer, nullable=False)  # TODO: delete after migration of data
     week = Column(Integer, nullable=False)
     tm_id = Column(Integer, ForeignKey("team.team_id"))
-    pass_cmp = Column(Integer)
-    pass_att = Column(Integer)
-    pass_yds = Column(Integer)
-    pass_td = Column(Integer)
-    pass_int = Column(Integer)
-    sacks = Column(Integer)
-    sack_yds = Column(Integer)
-    rush_att = Column(Integer)
-    rush_yds = Column(Integer)
-    rush_td = Column(Integer)
-    targets = Column(Integer)
-    receptions = Column(Integer)
-    rec_yds = Column(Integer)
-    rec_td = Column(Integer)
-    fumbles = Column(Integer)
-    xpm = Column(Integer)
-    xpa = Column(Integer)
-    fgm = Column(Integer)
-    fga = Column(Integer)
-    points = Column(Float)
 
-    __table_args__ = (UniqueConstraint("player_id", "season", "week"),)
-    player = relationship("Player", back_populates="weeks")
+    __table_args__ = (UniqueConstraint("player_season_id", "week"),)
+    player_season = relationship("PlayerSeason", back_populates="weeks")
+    player_week_espn = relationship("PlayerWeekESPN", back_populates="player_week")
+    league_weekly_team = relationship("LeagueWeeklyTeam", back_populates="player_week")
 
 
 class PlayerWeekMetadata(Base):
@@ -243,11 +231,23 @@ class LeagueWeeklyTeam(Base):
     league_team_id = Column(
         Integer, ForeignKey("league_team.league_team_id"), primary_key=True
     )
-    week = Column(Integer, primary_key=True)
-    player_id = Column(Integer, ForeignKey("player.player_id"), primary_key=True)
+    player_week_id = Column(
+        Integer,
+        ForeignKey("player_week.player_week_id"),
+        # , primary_key=True
+        # TODO make this part of PK once filled
+    )
+    week = Column(Integer)  # TODO: Delete after migration of data
+    player_id = Column(
+        Integer, ForeignKey("player.player_id")
+    )  # TODO: Delete after migration of data
     lineup_position = Column(String(50), nullable=False)
     league_team = relationship(
         "LeagueTeam", back_populates="league_weekly_team", lazy="joined"
+    )
+    player_week = relationship("PlayerWeek", back_populates="league_weekly_team")
+    player_week_espn = relationship(
+        "PlayerWeekESPN", back_populates="league_weekly_team"
     )
 
 
