@@ -1,16 +1,12 @@
 from sqlalchemy import (
     Column,
-    Float,
     Integer,
     String,
-    TIMESTAMP,
     ForeignKey,
     Date,
-    Boolean,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import declarative_base, relationship, foreign, remote
-from sqlalchemy.sql import func
+from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.schema import UniqueConstraint
 
 Base = declarative_base()
@@ -30,7 +26,6 @@ class Player(Base):
 
     __table_args__ = (UniqueConstraint("pfref_id"),)
     seasons = relationship("PlayerSeason", back_populates="player", lazy="joined")
-    weeks = relationship("PlayerWeek", back_populates="player")
 
 
 class PlayerSeason(Base):
@@ -40,7 +35,13 @@ class PlayerSeason(Base):
     season = Column(Integer, nullable=False)
     position = Column(String(50), nullable=False)
     player = relationship("Player", back_populates="seasons", lazy="joined")
-    weeks = relationship("PlayerWeek", back_populates="player_season")
+    weeks = relationship(
+        "PlayerWeekESPN", back_populates="player_season", lazy="joined"
+    )
+
+    @property
+    def espn_weeks_dict(self):
+        return {week.week: week for week in self.weeks}
 
     __table_args__ = (UniqueConstraint("player_id", "season"),)
 
@@ -68,12 +69,12 @@ class TeamName(Base):
 
 class PlayerWeekESPN(Base):
     __tablename__ = "player_week_espn"
-    player_week_espn_id = Column(Integer, primary_key=True)
-    player_week_id = Column(Integer, ForeignKey("player_week.player_week_id"))
-    player_season_id = Column(
-        Integer, ForeignKey("player_season.player_season_id")
-    )  # TODO: Delete after migration of data
-    week = Column(Integer, nullable=False)  # TODO: Delete after migration of data
+    player_week_id = Column(Integer, primary_key=True)
+    player_season_id = Column(Integer, ForeignKey("player_season.player_season_id"))
+    week = Column(
+        Integer,
+        nullable=False,
+    )
     # Passing Stats
     passing_attempts = Column(Integer)
     passing_completions = Column(Integer)
@@ -136,41 +137,11 @@ class PlayerWeekESPN(Base):
     defensive_yards_allowed = Column(Integer)
     defensive_2pt_return = Column(Integer)
 
-    player_week = relationship("PlayerWeek", back_populates="player_week_espn")
-    league_weekly_team = relationship(
-        "LeagueWeeklyTeam", back_populates="player_week_espn"
-    )  # WIll this work if they share same pK?
-
-
-class PlayerWeek(Base):
-    __tablename__ = "player_week"
-    player_week_id = Column(Integer, primary_key=True)
-    player_season_id = Column(Integer, ForeignKey("player_season.player_season_id"))
-    player_id = Column(
-        Integer, ForeignKey("player.player_id")
-    )  # TODO: Delete after migration of data
-    season = Column(Integer, nullable=False)  # TODO: delete after migration of data
-    week = Column(Integer, nullable=False)
-    tm_id = Column(Integer, ForeignKey("team.team_id"))
-
     __table_args__ = (UniqueConstraint("player_season_id", "week"),)
-    player_season = relationship("PlayerSeason", back_populates="weeks")
-    player_week_espn = relationship("PlayerWeekESPN", back_populates="player_week")
-    league_weekly_team = relationship("LeagueWeeklyTeam", back_populates="player_week")
-
-
-class PlayerWeekMetadata(Base):
-    __tablename__ = "player_week_metadata"
-    player_week_metadata_id = Column(Integer, primary_key=True)
-    season = Column(Integer, nullable=False)
-    chunk_start_value = Column(Integer)
-    chunk_size = Column(Integer)
-    completed = Column(Boolean, default=False)
-    updated_at = Column(
-        TIMESTAMP(timezone=False), server_default=func.now(), onupdate=func.now()
+    player_season = relationship("PlayerSeason", lazy="joined")
+    league_weekly_team = relationship(
+        "LeagueWeeklyTeam", back_populates="player_week", lazy="joined"
     )
-
-    __table_args__ = (UniqueConstraint("season", "chunk_start_value", "chunk_size"),)
 
 
 class Game(Base):
@@ -232,25 +203,13 @@ class LeagueWeeklyTeam(Base):
         Integer, ForeignKey("league_team.league_team_id"), primary_key=True
     )
     player_week_id = Column(
-        Integer,
-        ForeignKey("player_week.player_week_id"),
-        # , primary_key=True
-        # TODO make this part of PK once filled
+        Integer, ForeignKey("player_week_espn.player_week_id"), primary_key=True
     )
-    week = Column(Integer)  # TODO: Delete after migration of data
-    player_id = Column(
-        Integer, ForeignKey("player.player_id")
-    )  # TODO: Delete after migration of data
     lineup_position = Column(String(50), nullable=False)
     league_team = relationship(
         "LeagueTeam", back_populates="league_weekly_team", lazy="joined"
     )
-    player_week = relationship("PlayerWeek", back_populates="league_weekly_team")
-    player_week_espn = relationship(
-        "PlayerWeekESPN", back_populates="league_weekly_team"
+
+    player_week = relationship(
+        "PlayerWeekESPN", back_populates="league_weekly_team", lazy="joined"
     )
-
-
-# Transactions
-# league_team_id	transaction_type	player_id	timestamp
-# TODO: Add this table later

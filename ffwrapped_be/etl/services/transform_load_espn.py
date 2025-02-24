@@ -9,6 +9,7 @@ from ffwrapped_be.etl.extractors.espn_extractor import ESPNExtractor
 from ffwrapped_be.db import databases as db
 from ffwrapped_be.config import config
 from ffwrapped_be.app.data_models.orm import (
+    Player,
     LeagueSeason,
     LeagueTeam,
     DraftTeam,
@@ -38,7 +39,9 @@ class ESPNTransformLoader:
         self.extractor = ESPNExtractor(league_id, season, espn_s2, swid)
         self.db = db.SessionLocal()
         self.espn_league: League = self.extractor.extract_league()
-        self.espn_to_db_map = {}
+        self.espn_id_to_db_player: Dict[int, Player] = (
+            {}
+        )  # Mapping of ESPN player id to db player id
         self._platform_to_league_id_mapping = None
 
     def _get_existing_db_league(self, espn_league: League) -> LeagueSeason:
@@ -186,19 +189,19 @@ class ESPNTransformLoader:
             f"Successfully inserted draft picks for league {self.espn_league.league_id}"
         )
 
-    def _update_espn_to_db_map(self, player_espn_ids: List[str]) -> None:
+    def _update_espn_id_to_db_player(self, player_espn_ids: List[str]) -> None:
         requested_players = [
             espn_id
             for espn_id in player_espn_ids
-            if espn_id not in self.espn_to_db_map.keys()
+            if espn_id not in self.espn_id_to_db_player.keys()
         ]
         if requested_players:
             db_players = db.get_players_by_espn_id(requested_players, self.db)
             espn_to_db_map = {
-                int(db_player.espn_id): {"db_player_id": db_player.player_id}
+                int(db_player.espn_id): {"db_player_id": db_player}
                 for db_player in db_players
             }
-            self.espn_to_db_map.update(espn_to_db_map)
+            self.espn_id_to_db_player.update(espn_to_db_map)
         else:
             logger.info("All requested players already in espn_to_db_map")
         return
@@ -230,14 +233,33 @@ class ESPNTransformLoader:
             return
 
         player_espn_ids = [str(player.playerId) for player in lineup]
-        self._update_espn_to_db_map(player_espn_ids)
+        self._update_espn_id_to_db_player(player_espn_ids)
         league_weekly_team_entries = []
         for player in lineup:
             if player.lineupSlot not in ["K", "D/ST"]:
-                player_id = self.espn_to_db_map.get(player.playerId, {}).get(
+                db_player = self.espn_id_to_db_player.get(player.playerId, {}).get(
                     "db_player_id", None
                 )
-                if player_id is not None:
+                if db_player:
+                    player_season: PlayerSeason = [
+                        ps
+                        for ps in db_player.seasons
+                        if ps.season == self.espn_league.year
+                    ][0]
+                    player_week: list[PlayerWeekESPN] = [
+                        w for w in player_season.weeks if w.week == week
+                    ]
+                    if not player_week:
+                        logger.warning(
+                            f"Player {db_player.first_name} {db_player.last_name} does not have a weekly entry for week {week}. Inserting..."
+                        )
+                        new_entry = PlayerWeekESPN(
+                            player_season_id=player_season.player_season_id,
+                            week=week,
+                        )
+                        db.insert_record(new_entry, PlayerWeekESPN, db=self.db)
+                        player_week = [new_entry]
+
                     position = (
                         player.lineupSlot if player.lineupSlot != "RB/WR/TE" else "FLEX"
                     )
@@ -245,8 +267,7 @@ class ESPNTransformLoader:
                         "league_team_id": self.platform_to_league_id_mapping[
                             team.team_id
                         ],
-                        "week": week,
-                        "player_id": player_id,
+                        "player_week_id": player_week[0].player_week_id,
                         "lineup_position": position,
                     }
                     league_weekly_team_entries.append(weekly_team_member)
@@ -270,18 +291,22 @@ class ESPNTransformLoader:
                     box_score, week=week, home_team=False
                 )
 
-    def transform_load_player_week(self):
+    def transform_load_player_week(self, season: int = None):
         """
         - Picks players off `players` table and uses ESPN API to determine weekly statistics
         - After this is done, you still need a separate ETL for D/ST and Kickers
         """
         BATCH_SIZE = 100
         league = self.espn_league
-        players = db.get_players_with_espn_id(offset=0, db=self.db)
+        season = season if season else league.year
+        players = db.get_players_with_espn_id(offset=0, season=season, db=self.db)
         logger.info(f"Successfully {len(players)} retrieved players from db")
 
         player_week_entries = []
         for index, player in enumerate(players, 1):
+            player_season_id = [s for s in player.seasons if s.season == season][
+                0
+            ].player_season_id
             espn_id = int(player.espn_id)
             player_info = league.player_info(playerId=espn_id)
 
@@ -294,10 +319,8 @@ class ESPNTransformLoader:
                         mapped_data[utils.ESPN_PLAYER_STATS_TO_DB[key]] = value
                 mapped_data.update(
                     {
-                        "player_id": player.player_id,
-                        "season": league.year,
+                        "player_season_id": player_season_id,
                         "week": week,
-                        "tm_id": player_info.proTeam,
                     }
                 )
                 player_week_entries.append(mapped_data)
@@ -357,8 +380,8 @@ if __name__ == "__main__":
     espnTransformLoader = ESPNTransformLoader(
         config.espn_league_id, 2024, config.espn_s2, config.espn_swid
     )
-
-    espnTransformLoader.transform_load_league_weekly_team()
+    espnTransformLoader.transform_load_weekly_starters()
+    # espnTransformLoader.transform_load_player_week()
 
     # league = espnTransformLoader.espn_league
     # a = league.player_info(playerId=-16001)
