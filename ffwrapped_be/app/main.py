@@ -72,20 +72,25 @@ def get_best_lineup_drafted(
             points = 0
             player_season = player.seasons[0]
             player_week = player_season.espn_weeks_dict.get(week, None)
-            newDict = {
-                utils.DB_PLAYER_STATS_TO_ESPN.get(k, k): v
-                for k, v in vars(player_week).items()
-                if v is not None
-            }
-            newDict = utils.generate_derived_espn_statistics(newDict)
-            newDict = {
-                utils.ESPN_PLAYER_STATS_TO_SCORING_CONFIG.get(k, k): v
-                for k, v in newDict.items()
-                if v is not None
-            }
-            for k, v in newDict.items():
-                if k in scoring_config.keys():
-                    points += v * scoring_config[k]
+            if player_week:
+                newDict = {
+                    utils.DB_PLAYER_STATS_TO_ESPN.get(k, k): v
+                    for k, v in vars(player_week).items()
+                    if v is not None
+                }
+                newDict = utils.generate_derived_espn_statistics(newDict)
+                newDict = {
+                    utils.ESPN_PLAYER_STATS_TO_SCORING_CONFIG.get(k, k): v
+                    for k, v in newDict.items()
+                    if v is not None
+                }
+                for k, v in newDict.items():
+                    if k in scoring_config.keys():
+                        points += v * scoring_config[k]
+            else:
+                logger.info(
+                    f"{player.first_name} {player.last_name} has no player_week for week: {week}. Moving to next player"
+                )
             new_players.append(
                 Player(
                     name=player.first_name + " " + player.last_name,
@@ -133,17 +138,17 @@ def get_actual_lineup(
             points = 0
             player_season = player.seasons[0]
             player_week = player_season.espn_weeks_dict.get(week, None)
-            if not player_week:
+            if (
+                not player_week
+                or not player_week.league_weekly_team
+                or player_week.league_weekly_team[0].league_team.platform_team_id
+                != str(teamId)
+            ):
                 logger.info(
-                    f"{player.first_name} {player.last_name} has no player_week for week: {week}. Moving to next player"
+                    f"{player.first_name} {player.last_name} has no player_week or league_weekly_team for week: {week}."
                 )
                 continue
             league_weekly_team = player_week.league_weekly_team
-            if not league_weekly_team:
-                logger.info(
-                    f"{player.first_name} {player.last_name} has no lineup_position on roster for week: {week}. Moving to next player"
-                )
-                continue
             newDict = {
                 utils.DB_PLAYER_STATS_TO_ESPN.get(k, k): v
                 for k, v in vars(player_week).items()
@@ -158,6 +163,7 @@ def get_actual_lineup(
             for k, v in newDict.items():
                 if k in scoring_config.keys():
                     points += v * scoring_config[k]
+
             new_players.append(
                 Player(
                     name=player.first_name + " " + player.last_name,
@@ -207,15 +213,14 @@ def get_best_possible_lineup(
             points = 0
             player_season = player.seasons[0]
             player_week = player_season.espn_weeks_dict.get(week, None)
-            if not player_week:
+            if (
+                not player_week
+                or not player_week.league_weekly_team
+                or player_week.league_weekly_team[0].league_team.platform_team_id
+                != str(teamId)
+            ):
                 logger.info(
-                    f"{player.first_name} {player.last_name} has no player_week for week: {week}. Moving to next player"
-                )
-                continue
-            league_weekly_team = player_week.league_weekly_team
-            if not league_weekly_team:
-                logger.info(
-                    f"{player.first_name} {player.last_name} has no lineup_position on roster for week: {week}. Moving to next player"
+                    f"{player.first_name} {player.last_name} has no player_week or league_weekly_team for week: {week}."
                 )
                 continue
             newDict = {
